@@ -424,6 +424,15 @@ class PlatformTests(unittest.TestCase):
         context.cookies.return_value = [{"name": "sessionid"}, {"name": "sid_tt"}]
         self.assertTrue(douyin.has_session(context))
 
+        response, qr_state = MagicMock(), {}
+        response.url = "https://login.douyin.com/passport/web/check_qrconnect/"
+        response.json.return_value = {"data": {"status": "confirmed", "redirect_url": "https://www.douyin.com/passport/callback?ticket=test"}}
+        douyin.capture_qr_response(response, qr_state)
+        self.assertEqual(qr_state, {"status": "confirmed", "redirect_url": "https://www.douyin.com/passport/callback?ticket=test"})
+        response.json.return_value = {"data": {"status": "confirmed", "redirect_url": "https://evil.example/callback"}}
+        douyin.capture_qr_response(response, qr_state := {})
+        self.assertEqual(qr_state, {"status": "confirmed"})
+
         context.cookies.side_effect = [[], [], [{"name": "sessionid"}, {"name": "sid_tt"}]]
         page, image = MagicMock(), MagicMock()
         image.get_attribute.return_value = ""

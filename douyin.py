@@ -4,7 +4,7 @@ import re
 import shutil
 import time
 from datetime import datetime, timezone
-from urllib.parse import quote, unquote
+from urllib.parse import quote, unquote, urlparse
 
 from platforms import parse_cookie, read_json, write_json
 
@@ -141,6 +141,21 @@ def save_qr(image, path):
     temporary.replace(path)
 
 
+def capture_qr_response(response, state):
+    if "check_qrconnect" not in response.url:
+        return
+    try:
+        payload = response.json()
+        data = payload.get("data") or {}
+    except Exception:
+        return
+    state["status"] = str(data.get("status") or "")
+    redirect = str(data.get("redirect_url") or payload.get("redirect_url") or "")
+    hostname = urlparse(redirect).hostname or ""
+    if redirect.startswith("https://") and (hostname == "douyin.com" or hostname.endswith(".douyin.com")):
+        state["redirect_url"] = redirect
+
+
 def login(context, page, config, root):
     if config.get("login_method") == "cookie":
         context.add_cookies(parse_cookie(config.get("cookie", ""), ".douyin.com", "抖音"))
@@ -149,7 +164,12 @@ def login(context, page, config, root):
         return "session"
     if config.get("login_method") == "qrcode":
         screenshot = root / "login-required.png"
+        state_path = root / "qr-state.json"
         screenshot.unlink(missing_ok=True)
+        state_path.unlink(missing_ok=True)
+        qr_state = {}
+        capture = lambda response: capture_qr_response(response, qr_state)
+        page.on("response", capture)
         page.goto(LOGIN_URL, wait_until="domcontentloaded", timeout=60_000)
         page.wait_for_timeout(2500)
         acquisition_deadline = time.monotonic() + 15
@@ -159,21 +179,44 @@ def login(context, page, config, root):
             image = qr_image(page)
         if not image:
             page.screenshot(path=str(screenshot), full_page=True)
+            page.remove_listener("response", capture)
             raise DouyinError("login_page_changed", "抖音登录页未显示二维码，请查看登录页面后重试")
         save_qr(image, screenshot)
+        write_json(state_path, {"state": "waiting"})
         deadline = time.monotonic() + 120
         last_capture = time.monotonic()
-        while time.monotonic() < deadline:
-            if has_session(context):
-                screenshot.unlink(missing_ok=True)
-                return "qrcode"
-            image = qr_image(page)
-            if image and time.monotonic() - last_capture >= 4:
-                save_qr(image, screenshot)
-                last_capture = time.monotonic()
-            page.wait_for_timeout(1000)
-        page.screenshot(path=str(screenshot), full_page=True)
-        raise DouyinError("qr_login_required", "抖音二维码已过期，请点击立即检查生成新二维码")
+        try:
+            while time.monotonic() < deadline:
+                if has_session(context):
+                    screenshot.unlink(missing_ok=True)
+                    state_path.unlink(missing_ok=True)
+                    return "qrcode"
+                status = qr_state.get("status")
+                if status in {"scanned", "2"}:
+                    write_json(state_path, {"state": "scanned"})
+                elif status in {"confirmed", "3", "4"}:
+                    write_json(state_path, {"state": "confirming"})
+                redirect = qr_state.pop("redirect_url", "")
+                if redirect:
+                    try:
+                        page.goto(redirect, wait_until="domcontentloaded", timeout=60_000)
+                    except Exception:
+                        pass
+                    page.wait_for_timeout(1500)
+                    if has_session(context):
+                        screenshot.unlink(missing_ok=True)
+                        state_path.unlink(missing_ok=True)
+                        return "qrcode"
+                image = qr_image(page)
+                if image and time.monotonic() - last_capture >= 4:
+                    save_qr(image, screenshot)
+                    last_capture = time.monotonic()
+                page.wait_for_timeout(1000)
+            page.screenshot(path=str(screenshot), full_page=True)
+            write_json(state_path, {"state": "expired"})
+            raise DouyinError("qr_login_required", "抖音二维码已过期，请点击立即检查生成新二维码")
+        finally:
+            page.remove_listener("response", capture)
     return "public"
 
 

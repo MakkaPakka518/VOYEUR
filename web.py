@@ -170,6 +170,7 @@ def state(library_data: bool = True):
         "threads_login_screenshot": changing_file_url(DATA_DIR / "threads" / "login-required.png"),
         "x_login_screenshot": changing_file_url(DATA_DIR / "x" / "login-required.png"),
         "douyin_login_screenshot": changing_file_url(DATA_DIR / "douyin" / "login-required.png"),
+        "douyin_qr_state": read_json(DATA_DIR / "douyin" / "qr-state.json", {}).get("state"),
         "library": library() if library_data else None,
     }
 

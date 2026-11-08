@@ -108,8 +108,9 @@ function renderStatus(globalStatus = {}) {
   let [title, detail] = errors[status.error_code] || labels[status.state] || labels.not_configured;
   const screenshot = statusPlatform === 'instagram' ? lastState?.login_screenshot : lastState?.[`${statusPlatform}_login_screenshot`];
   if (statusPlatform === 'douyin' && lastState?.config?.douyin?.login_method === 'qrcode' && screenshot && status.state === 'running') {
-    title = '等待扫码';
-    detail = '长按二维码存入照片，再在抖音扫一扫中从相册选择';
+    const qrState = lastState?.douyin_qr_state;
+    title = qrState === 'scanned' ? '已扫码' : qrState === 'confirming' ? '正在完成登录' : '等待扫码';
+    detail = qrState === 'scanned' ? '请在抖音 App 中确认登录' : qrState === 'confirming' ? '正在写入登录会话，请稍候' : '长按二维码存入照片，再在抖音扫一扫中从相册选择';
   }
   elements.band.dataset.state = status.state || 'not_configured';
   elements.statusTitle.textContent = title;
