@@ -79,6 +79,9 @@ def logout():
 
 
 @app.get("/")
+@app.get("/instagram")
+@app.get("/tiktok")
+@app.get("/settings")
 def index():
     return FileResponse(ROOT / "static" / "index.html")
 

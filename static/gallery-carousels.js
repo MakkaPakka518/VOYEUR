@@ -24,7 +24,7 @@ function details(group, index) {
   return `<div class="media-title"><span>${escapeHtml(title)}</span><span class="photo-count">${index + 1} / ${group.photos.length}</span></div>
     <p class="caption">${escapeHtml(photo.alt)}</p>
     <div class="media-actions">
-      <a href="${escapeHtml(photo.url)}" target="_blank" rel="noreferrer">查看原图</a>
+      <a href="${escapeHtml(photo.url)}" data-preview="image" data-preview-title="@${escapeHtml(group.target)} ${escapeHtml(title)}">查看原图</a>
       <a href="${escapeHtml(photo.url)}${photo.url.includes('?') ? '&' : '?'}download=1">下载</a>
       ${photo.item?.source_url ? `<a href="${escapeHtml(photo.item.source_url)}" target="_blank" rel="noreferrer">原帖</a>` : ''}
       ${photo.item ? `<button class="delete-button" type="button" data-platform="${group.platform}" data-target="${escapeHtml(group.target)}" data-item="${escapeHtml(photo.item.id)}">删除此帖</button>` : ''}

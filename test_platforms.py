@@ -53,6 +53,16 @@ class PlatformTests(unittest.TestCase):
         self.client.post("/api/config", json={**self.ig, "password": ""})
         self.assertEqual(read_json(self.root / "config.json", {})["tiktok"]["password"], "tk-secret")
 
+    def test_separate_pages_are_authenticated_and_directly_loadable(self):
+        for path in ("/", "/instagram", "/tiktok", "/settings"):
+            response = self.client.get(path)
+            self.assertEqual(response.status_code, 200)
+            self.assertIn("text/html", response.headers["content-type"])
+        with TestClient(web.app) as guest:
+            response = guest.get("/settings", follow_redirects=False)
+            self.assertEqual(response.status_code, 303)
+            self.assertEqual(response.headers["location"], "/login")
+
     def test_cookie_and_password_method_switch_keeps_credentials(self):
         self.assertEqual(self.save_tiktok().status_code, 200)
         self.assertEqual(self.save_tiktok(password="", login_method="cookie", cookie="sessionid=test-session; sessionid_ss=second").status_code, 200)

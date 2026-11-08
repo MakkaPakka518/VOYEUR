@@ -19,18 +19,18 @@ const fixture = () => ({
   status: { state: 'ready', checked_at: '2026-11-08T10:00:00Z', ...(includeTikTok ? { platforms: {
     instagram: { state: 'ready' }, tiktok: { state: 'error', error_code: 'verification_required' },
   }} : {}) },
-  library: [{ name: 'demo', status: { checked_at: `revision-${revision}` }, latest: '/photo/3.svg',
+  library: [{ name: 'demo', status: { checked_at: `revision-${revision}` }, latest: '/files/photo/3.svg',
     items: Array.from({ length: 14 }, (_, i) => ({
       id: `post-${i}`, caption: `归档照片 ${i + 1}`, captured_at: '2026-11-08T10:00:00Z',
       source_url: `https://www.instagram.com/p/post-${i}/`,
-      files: [{ name: 'media-01.jpg', kind: 'image', url: `/photo/${i % 4}.svg` },
-        { name: 'page.png', kind: 'image', url: `/photo/${(i + 1) % 4}.svg` },
-        ...(i === 0 ? [{ name: 'media-02.mp4', kind: 'video', url: '/video.mp4' }] : [])],
+      files: [{ name: 'media-01.jpg', kind: 'image', url: `/files/photo/${i % 4}.svg` },
+        { name: 'page.png', kind: 'image', url: `/files/photo/${(i + 1) % 4}.svg` },
+        ...(i === 0 ? [{ name: 'media-02.mp4', kind: 'video', url: '/files/video.mp4' }] : [])],
     })),
-  }, ...(includeTikTok ? [{ name: 'demo', key: 'tiktok:demo', platform: 'tiktok', status: {}, latest: '/photo/1.svg', items: [{
+  }, ...(includeTikTok ? [{ name: 'demo', key: 'tiktok:demo', platform: 'tiktok', status: {}, latest: '/files/photo/1.svg', items: [{
     id: 'tk-123', caption: 'TikTok 图文和视频', captured_at: '2026-11-08T10:00:00Z', source_url: 'https://www.tiktok.com/@demo/photo/123',
-    files: [{ name: 'media-01.jpg', kind: 'image', url: '/photo/1.svg' }, { name: 'media-02.jpg', kind: 'image', url: '/photo/2.svg' },
-      { name: 'media-03.mp4', kind: 'video', url: '/video.mp4' }],
+    files: [{ name: 'media-01.jpg', kind: 'image', url: '/files/photo/1.svg' }, { name: 'media-02.jpg', kind: 'image', url: '/files/photo/2.svg' },
+      { name: 'media-03.mp4', kind: 'video', url: '/files/video.mp4' }],
   }] }] : [])],
 });
 const server = createServer(async (req, res) => {
@@ -48,9 +48,10 @@ const server = createServer(async (req, res) => {
     res.end('{"ok":true}');
     return;
   }
-  if (/^\/photo\/\d\.svg$/.test(url.pathname)) {
+  const photoMatch = url.pathname.match(/^\/(?:files\/)?photo\/(\d)\.svg$/);
+  if (photoMatch) {
     res.setHeader('Content-Type', 'image/svg+xml');
-    res.end(`<svg xmlns="http://www.w3.org/2000/svg" width="600" height="800"><path fill="${colors[Number(url.pathname[7])]}" d="M0 0h600v800H0z"/></svg>`);
+    res.end(`<svg xmlns="http://www.w3.org/2000/svg" width="600" height="800"><path fill="${colors[Number(photoMatch[1])]}" d="M0 0h600v800H0z"/></svg>`);
     return;
   }
   if (url.pathname === '/component') {
@@ -59,9 +60,9 @@ const server = createServer(async (req, res) => {
     return;
   }
   try {
-    const path = url.pathname === '/' ? '/static/index.html' : url.pathname;
+    const path = ['/', '/instagram', '/tiktok', '/settings'].includes(url.pathname) ? '/static/index.html' : url.pathname;
     if (!path.startsWith('/static/') || path.includes('..')) throw new Error('Not found');
-    res.setHeader('Content-Type', ({ '.js': 'text/javascript', '.css': 'text/css', '.html': 'text/html' })[extname(path)] || 'application/octet-stream');
+    res.setHeader('Content-Type', ({ '.js': 'text/javascript', '.css': 'text/css', '.html': 'text/html', '.svg': 'image/svg+xml' })[extname(path)] || 'application/octet-stream');
     res.end(await readFile(join(root, path)));
   } catch {
     res.writeHead(404).end();
@@ -111,6 +112,10 @@ const near = (a, b) => a.slice(0, 3).every((value, i) => Math.abs(value - b[i]) 
 async function clickSide(photo, side) {
   const { width, height } = await photo.boundingBox();
   await photo.click({ position: { x: width * (side === 'left' ? .2 : .8), y: height * .5 } });
+}
+async function navigate(page, path) {
+  await page.locator(`a[data-route][href="${path}"]:visible`).first().click();
+  await page.waitForURL(`${base}${path}`);
 }
 
 try {
@@ -299,6 +304,32 @@ try {
   assert(await panel.evaluate(() => window.panelVideo === document.querySelector('video')));
   assert.equal(await card.locator('.photo-count').innerText(), '2 / 12');
 
+  // Original files open in this page, with focus, history and scroll restoration.
+  const original = card.locator('.media-actions a[data-preview]').first();
+  await original.scrollIntoViewIfNeeded();
+  const originalScroll = await panel.evaluate(() => scrollY);
+  const originalWidth = await panel.locator('.workspace').evaluate(node => node.getBoundingClientRect().width);
+  const pageCount = panel.context().pages().length;
+  await original.click();
+  const dialog = panel.locator('#media-preview');
+  await dialog.waitFor({ state: 'visible' });
+  await panel.waitForFunction(() => document.querySelector('#preview-content img')?.naturalWidth > 0);
+  assert.equal(await dialog.locator('img').getAttribute('src'), await original.getAttribute('href'));
+  assert.equal(panel.url(), `${base}/`);
+  assert.equal(panel.context().pages().length, pageCount);
+  assert.equal(await panel.evaluate(() => document.body.style.position), 'fixed');
+  assert(Math.abs(await panel.locator('.workspace').evaluate(node => node.getBoundingClientRect().width) - originalWidth) < 1);
+  await panel.screenshot({ path: `${artifacts}/image-preview-desktop.png` });
+  await panel.keyboard.press('Escape');
+  await dialog.waitFor({ state: 'hidden' });
+  assert(Math.abs(await panel.evaluate(() => scrollY) - originalScroll) < 2);
+  assert(await original.evaluate(node => document.activeElement === node));
+  await panel.goForward();
+  await dialog.waitFor({ state: 'visible' });
+  await panel.goBack();
+  await dialog.waitFor({ state: 'hidden' });
+  assert.equal(await dialog.locator('img,video').count(), 0);
+
   panel.on('dialog', dialog => dialog.accept());
   await card.locator('.delete-button').click();
   await panel.waitForFunction(() => document.querySelector('#toast').textContent === '内容已删除');
@@ -330,7 +361,8 @@ try {
   await panel.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
   const tk = panel.locator('.target-block[data-platform="tiktok"]');
   await tk.waitFor();
-  await panel.getByRole('button', { name: 'TikTok', exact: true }).click();
+  await navigate(panel, '/tiktok');
+  assert(await panel.locator('#settings').isHidden());
   await panel.getByRole('button', { name: '图片', exact: true }).click();
   assert.equal(await panel.locator('.target-block[data-platform="instagram"]:visible').count(), 0);
   const tkCard = tk.locator('.photo-carousel-card[data-kind="image"]');
@@ -343,6 +375,15 @@ try {
   await panel.waitForTimeout(100);
   assert(requests.some(([method, path, , search]) => method === 'DELETE' && path === '/api/targets/demo/items/tk-123' && search === '?platform=tiktok'));
   assert.equal(await tk.locator('.target-actions a').getAttribute('href'), 'https://www.tiktok.com/@demo');
+  await navigate(panel, '/instagram');
+  assert.equal(await tk.isVisible(), false);
+  assert.equal(await panel.locator('.target-block[data-platform="instagram"]:visible').count(), 1);
+  await navigate(panel, '/');
+  assert.equal(await panel.locator('.target-block:visible').count(), 2);
+  await navigate(panel, '/settings');
+  assert(await panel.locator('#library').isHidden());
+  assert.equal(await panel.locator('.settings-group[open]').count(), 0);
+  await panel.locator('#platform-settings summary').click();
   await panel.locator('#settings-platform').selectOption('tiktok');
   assert(await panel.getByText('TikTok 账号', { exact: true }).isVisible());
   assert(await panel.getByText('输入 TikTok 验证码', { exact: true }).isVisible());
@@ -353,6 +394,7 @@ try {
   assert(await panel.locator('#cookie-field').isVisible());
   assert(await panel.locator('#verification-panel').isHidden());
   assert(await panel.locator('#ig-username').isHidden());
+  await panel.locator('#targets-settings summary').click();
   await panel.locator('#ig-targets').fill('demo');
   await panel.locator('#tiktok-cookie').fill('sessionid=fixture-session');
   await panel.getByRole('button', { name: '保存并连接', exact: true }).click();
@@ -370,7 +412,66 @@ try {
   await panel.locator('#settings-platform').selectOption('instagram');
   assert.equal(await panel.locator('#ig-username').inputValue(), 'demo');
   assert(await panel.locator('#cookie-field').isHidden());
+  await panel.reload();
+  await panel.locator('#settings-platform').waitFor({ state: 'attached' });
+  assert.equal(panel.url(), `${base}/settings`);
+  assert(await panel.locator('#library').isHidden());
+  assert.equal(await panel.locator('.settings-group[open]').count(), 0);
+  await panel.screenshot({ path: `${artifacts}/settings-collapsed-desktop.png` });
+  await panel.waitForFunction(() => document.querySelector('#ig-targets').value === 'demo');
+  await panel.evaluate(() => document.querySelector('#ig-targets').value = '');
+  await panel.getByRole('button', { name: '保存并连接', exact: true }).click();
+  assert(await panel.locator('#targets-settings').evaluate(node => node.open));
+
+  await navigate(panel, '/tiktok');
+  await panel.getByRole('button', { name: '视频', exact: true }).click();
+  await tk.locator('a[data-preview="video"]').click();
+  await dialog.waitFor({ state: 'visible' });
+  assert.equal(await dialog.locator('video').getAttribute('src'), '/files/video.mp4');
+  assert(await dialog.locator('video').evaluate(node => node.controls && node.playsInline));
+  await panel.waitForFunction(() => document.querySelector('#preview-message').textContent.includes('加载失败'));
+  await panel.getByRole('button', { name: '关闭预览', exact: true }).click();
+  await dialog.waitFor({ state: 'hidden' });
+  assert.equal(await dialog.locator('video').count(), 0);
+  await panel.getByRole('button', { name: '图片', exact: true }).click();
+  await tk.locator('a[data-preview="image"]').first().click();
+  await dialog.waitFor({ state: 'visible' });
+  await panel.waitForFunction(() => document.querySelector('#preview-content img')?.naturalWidth > 0);
+  await panel.locator('#preview-message').waitFor({ state: 'hidden' });
+  await panel.screenshot({ path: `${artifacts}/image-preview-mobile.png` });
+  await panel.goBack();
+  await dialog.waitFor({ state: 'hidden' });
   await panel.close();
+
+  const mobilePreview = await open({ viewport: { width: 375, height: 844 }, isMobile: true, hasTouch: true });
+  await mobilePreview.goto(`${base}/instagram`);
+  assert(await mobilePreview.locator('#settings').isHidden());
+  assert.equal(await mobilePreview.locator('#page-title').innerText(), 'Instagram');
+  const mobileOriginal = mobilePreview.locator('.target-block[data-platform="instagram"] a[data-preview="image"]').first();
+  await mobileOriginal.scrollIntoViewIfNeeded();
+  const mobileScroll = await mobilePreview.evaluate(() => scrollY);
+  await mobileOriginal.tap();
+  const mobileDialog = mobilePreview.locator('#media-preview');
+  await mobileDialog.waitFor({ state: 'visible' });
+  await mobilePreview.waitForFunction(() => document.querySelector('#preview-content img')?.naturalWidth > 0);
+  const fullscreen = await mobileDialog.boundingBox();
+  assert(Math.abs(fullscreen.width - 375) < 1 && Math.abs(fullscreen.height - 844) < 1, JSON.stringify(fullscreen));
+  const closeArea = await mobilePreview.locator('#preview-close').boundingBox();
+  assert(closeArea.width >= 48 && closeArea.height >= 48);
+  await mobilePreview.screenshot({ path: `${artifacts}/preview-fullscreen-touch-375.png` });
+  await mobilePreview.goBack();
+  await mobileDialog.waitFor({ state: 'hidden' });
+  assert.equal(mobilePreview.url(), `${base}/instagram`);
+  assert(Math.abs(await mobilePreview.evaluate(() => scrollY) - mobileScroll) < 2);
+  await navigate(mobilePreview, '/settings');
+  assert.equal(await mobilePreview.locator('.settings-group[open]').count(), 0);
+  assert(await mobilePreview.locator('#library').isHidden());
+  await mobilePreview.screenshot({ path: `${artifacts}/settings-collapsed-touch-375.png` });
+  await mobilePreview.locator('#platform-settings summary').tap();
+  assert(await mobilePreview.locator('#settings-platform').isVisible());
+  await mobilePreview.locator('#platform-settings summary').tap();
+  assert(await mobilePreview.locator('#settings-platform').isHidden());
+  await mobilePreview.close();
   assert.deepEqual(errors, []);
   console.log(`PASS: WebGL/2D ink masks, interruption, keyboard/touch, failure/races, visibility, reduced motion, context recovery, cleanup, gallery actions and 375/768/1440 layouts. Screenshots: ${artifacts}`);
 } finally {

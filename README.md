@@ -64,10 +64,19 @@ Everything is stored under `data/`:
 
 ## Image viewer
 
+The panel has separate, directly loadable pages: `/` for all platforms, `/instagram`, `/tiktok`,
+and `/settings`. Desktop navigation and the four-tab mobile bar use the same routes.
+The settings page groups platform/login, target users, and collection frequency into native
+expandable sections, initially collapsed. Settings no longer appear below media.
+Instagram and TikTok icons are included locally from Simple Icons (CC0-1.0).
+
 Photos and screenshots are grouped in batches of up to 12. Click the left half of a photo
 for the previous photo, or the right half for the next. The reveal starts at the press location.
 Left/Right, Home and End also work; Enter or Space advances to the next photo.
 The actions below each carousel apply to the current photo. Video items retain native playback controls.
+Open original photos or videos in the in-page preview. Desktop uses a centered viewer and phones
+use a fullscreen viewer. Close with the close button, Escape, or browser Back; playback and loading
+are stopped on close and the original scroll position and focus are restored.
 On phones, the viewer removes the surrounding scene whitespace so photos are nearly screen-width.
 
 The viewer uses local WebGL shaders, falls back to a Canvas2D reveal, and respects reduced motion.

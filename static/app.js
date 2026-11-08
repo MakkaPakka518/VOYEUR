@@ -1,4 +1,5 @@
 import { imageGroupsMarkup, syncImageGroups, destroyImageGroups } from './gallery-carousels.js';
+import { createMediaPreview } from './media-preview.js';
 
 const elements = {
   band: document.querySelector('#status-band'),
@@ -30,6 +31,15 @@ let librarySignature = '';
 let selectedPlatform = 'instagram';
 let activePlatform = 'all';
 const platformNames = { instagram: 'Instagram', tiktok: 'TikTok' };
+const preview = createMediaPreview(document.querySelector('#media-preview'));
+const pages = {
+  '/': { title: '全部媒体', platform: 'all' },
+  '/instagram': { title: 'Instagram', platform: 'instagram' },
+  '/tiktok': { title: 'TikTok', platform: 'tiktok' },
+  '/settings': { title: '设置', platform: 'all' },
+};
+let currentPage = '';
+const pageScroll = new Map(), pageFilters = new Map();
 
 const escapeHtml = (value = '') => String(value).replace(/[&<>'"]/g, character => ({
   '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;'
@@ -62,13 +72,18 @@ async function api(path, options) {
 }
 
 function renderStatus(globalStatus = {}) {
-  const status = globalStatus.platforms?.[selectedPlatform] || (selectedPlatform === 'instagram' ? globalStatus : {});
-  const brand = platformNames[selectedPlatform];
+  const settingStatus = globalStatus.platforms?.[selectedPlatform] || (selectedPlatform === 'instagram' ? globalStatus : {});
+  let statusPlatform = currentPage === '/settings' ? selectedPlatform : activePlatform;
+  if (statusPlatform === 'all' && globalStatus.state === 'error') {
+    statusPlatform = Object.keys(globalStatus.platforms || {}).find(platform => globalStatus.platforms[platform].state === 'error') || selectedPlatform;
+  }
+  const status = statusPlatform === 'all' ? globalStatus : globalStatus.platforms?.[statusPlatform] || (statusPlatform === 'instagram' ? globalStatus : {});
+  const brand = platformNames[statusPlatform] || '全部平台';
   const errors = {
     invalid_credentials: ['账号或密码错误', `请在设置中修改 ${brand} 账号或密码后重试`],
     verification_required: ['需要验证码', `输入 ${brand} 发来的验证码以继续登录`],
     invalid_verification: ['验证码错误', '请输入新验证码后再次提交'],
-    manual_verification: ['需要确认登录', selectedPlatform === 'tiktok' ? '查看登录截图完成验证，或切换 Cookie 登录' : '按登录截图提示完成 Instagram 安全确认'],
+    manual_verification: ['需要确认登录', statusPlatform === 'tiktok' ? '查看登录截图完成验证，或切换 Cookie 登录' : '按登录截图提示完成 Instagram 安全确认'],
     login_page_changed: ['登录页面已变化', `查看登录截图确认 ${brand} 当前页面`],
     tiktok_blocked: ['TikTok 需要处理', status.error || '请完成登录或更新 Cookie'],
     rate_limited: ['TikTok 登录过于频繁', '已暂停密码重试，请改用 Cookie 或更新登录设置后再试'],
@@ -85,11 +100,11 @@ function renderStatus(globalStatus = {}) {
   elements.statusDetail.textContent = detail;
   elements.statusTime.textContent = formatDate(status.checked_at || status.started_at);
   elements.railState.textContent = title;
-  const screenshot = selectedPlatform === 'tiktok' ? lastState?.tiktok_login_screenshot : lastState?.login_screenshot;
+  const screenshot = statusPlatform === 'tiktok' ? lastState?.tiktok_login_screenshot : lastState?.login_screenshot;
   elements.statusAction.hidden = !screenshot;
   elements.statusAction.href = screenshot || '#';
-  document.querySelector('#verification-title').textContent = `输入 ${brand} 验证码`;
-  elements.verificationPanel.hidden = !['verification_required', 'invalid_verification'].includes(status.error_code)
+  document.querySelector('#verification-title').textContent = `输入 ${platformNames[selectedPlatform]} 验证码`;
+  elements.verificationPanel.hidden = !['verification_required', 'invalid_verification'].includes(settingStatus.error_code)
     || (selectedPlatform === 'tiktok' && elements.loginMethod.value === 'cookie');
 }
 
@@ -117,7 +132,7 @@ function mediaCard(target, item, snapshot = false) {
         <div class="media-title"><span>${escapeHtml(title)}</span><time>${snapshot ? '' : formatDate(item.captured_at)}</time></div>
         <p class="caption">${snapshot ? `@${escapeHtml(name)} 最近一次主页检查` : escapeHtml(item.caption || `已归档 ${platformNames[platform]} 内容`)}</p>
         <div class="media-actions">
-          <a href="${escapeHtml(preview.url)}" target="_blank" rel="noreferrer">查看</a>
+          <a href="${escapeHtml(preview.url)}" data-preview="${kind === 'video' ? 'video' : 'image'}" data-preview-title="@${escapeHtml(name)} ${escapeHtml(title)}">${kind === 'video' ? '查看视频' : '查看原图'}</a>
           ${!snapshot && item.source_url ? `<a href="${escapeHtml(item.source_url)}" target="_blank" rel="noreferrer">原帖</a>` : ''}
           ${deleteButton}
         </div>
@@ -130,7 +145,7 @@ function renderLibrary(library) {
   const hasContent = library.some(target => target.latest || target.items.length);
   if (!hasContent) {
     elements.library.innerHTML = `
-      <div class="empty-state"><div><h3>还没有收藏</h3><p>配置 Instagram 或 TikTok 关注用户，首次检查后内容会出现在这里。</p><a href="#settings">前往采集设置</a></div></div>`;
+      <div class="empty-state"><div><h3>还没有收藏</h3><p>配置 Instagram 或 TikTok 关注用户，首次检查后内容会出现在这里。</p><a href="/settings" data-route>前往采集设置</a></div></div>`;
     syncImageGroups(elements.library);
     return;
   }
@@ -142,7 +157,7 @@ function renderLibrary(library) {
     const cards = target.items.filter(item => item.files.some(file => file.kind === 'video')).map(item => mediaCard(target, item)).join('');
     const state = target.status.error ? escapeHtml(targetState(target.status)) : `${target.items.length} 条归档`;
     return `<section class="target-block" data-target-key="${escapeHtml(key)}" data-platform="${platform}">
-      <div class="target-heading"><h3><span class="platform-name">${platformNames[platform]}</span>@${escapeHtml(target.name)} <span class="rail-state">${state}</span></h3><div class="target-actions"><a href="${profileUrl}" target="_blank" rel="noreferrer">打开主页</a><button class="delete-button" type="button" data-platform="${platform}" data-target="${escapeHtml(target.name)}">删除此用户</button></div></div>
+      <div class="target-heading"><h3><span class="platform-name"><svg class="platform-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="/static/icons/platforms.svg#${platform}"/></svg>${platformNames[platform]}</span>@${escapeHtml(target.name)} <span class="rail-state">${state}</span></h3><div class="target-actions"><a href="${profileUrl}" target="_blank" rel="noreferrer">打开主页</a><button class="delete-button" type="button" data-platform="${platform}" data-target="${escapeHtml(target.name)}">删除此用户</button></div></div>
       <div class="media-grid">${photos}${cards}</div>
     </section>`;
   }).join('');
@@ -206,6 +221,7 @@ function hydrateForm(config) {
   elements.passwordNote.textContent = selected.has_password ? '已保存，留空保持不变' : `用于建立 ${platformNames[selectedPlatform]} 浏览器会话`;
   elements.loginMethod.value = selected.login_method || 'password';
   elements.cookie.placeholder = selected.has_cookie ? '已保存，留空保持不变' : 'sessionid=...; sessionid_ss=...';
+  document.querySelector('#targets-summary').textContent = selected.targets?.length ? `${selected.targets.length} 位用户` : '未设置';
   updateLoginFields();
   hydrated = true;
 }
@@ -222,6 +238,7 @@ function updateLoginFields() {
   elements.username.required = !tiktok;
   elements.username.placeholder = tiktok ? '邮箱或用户名' : '手机号、邮箱或用户名';
   document.querySelector('#reset-session').textContent = `重置 ${platformNames[selectedPlatform]} 会话`;
+  document.querySelector('#platform-summary').textContent = platformNames[selectedPlatform];
   renderStatus(lastState?.status || {});
 }
 
@@ -234,6 +251,10 @@ elements.platform.addEventListener('change', () => {
   renderStatus(lastState?.status || {});
 });
 elements.loginMethod.addEventListener('change', updateLoginFields);
+elements.form.addEventListener('invalid', event => {
+  const group = event.target.closest('details');
+  if (group) group.open = true;
+}, true);
 
 async function refresh(includeLibrary = true) {
   try {
@@ -271,14 +292,7 @@ document.querySelectorAll('.filter').forEach(button => button.addEventListener('
     item.setAttribute('aria-pressed', String(item === button));
   });
   activeFilter = button.dataset.filter;
-  applyFilter();
-}));
-document.querySelectorAll('.platform-filter').forEach(button => button.addEventListener('click', () => {
-  document.querySelectorAll('.platform-filter').forEach(item => {
-    item.classList.toggle('active', item === button);
-    item.setAttribute('aria-pressed', String(item === button));
-  });
-  activePlatform = button.dataset.platform;
+  pageFilters.set(currentPage, activeFilter);
   applyFilter();
 }));
 
@@ -370,14 +384,64 @@ document.querySelectorAll('input, select').forEach(control => control.addEventLi
   if (innerWidth <= 860) setTimeout(() => control.scrollIntoView({ block: 'center', behavior: 'smooth' }), 260);
 }));
 
-document.querySelectorAll('.side-nav a, .bottom-nav a').forEach(link => link.addEventListener('click', () => {
-  const destination = link.getAttribute('href');
-  document.querySelectorAll('.side-nav a, .bottom-nav a').forEach(item => {
-    const active = item.getAttribute('href') === destination;
-    item.classList.toggle('active', active);
-    if (active) item.setAttribute('aria-current', 'page'); else item.removeAttribute('aria-current');
+function showPage(path, focus = false) {
+  path = path in pages ? path : '/';
+  if (path === currentPage) return;
+  if (currentPage) pageScroll.set(currentPage, window.scrollY);
+  preview.close(true);
+  document.querySelectorAll('video').forEach(video => video.pause());
+  currentPage = path;
+  const page = pages[path], settings = path === '/settings';
+  activePlatform = page.platform;
+  activeFilter = pageFilters.get(path) || 'all';
+  document.querySelector('#settings').hidden = !settings;
+  document.querySelector('#library').hidden = settings;
+  document.querySelector('#page-title').textContent = page.title;
+  document.title = `${page.title} — ig luv`;
+  document.querySelector('#page-description').textContent = settings ? '凭据只保存在这台 VPS。成功登录后会复用浏览器会话。' : '关注的动态、截图和原始媒体。';
+  const icon = document.querySelector('#page-brand');
+  icon.hidden = page.platform === 'all';
+  icon.querySelector('use').setAttribute('href', `/static/icons/platforms.svg#${page.platform}`);
+  document.querySelectorAll('.side-nav a[data-route], .bottom-nav a[data-route]').forEach(link => {
+    const active = link.getAttribute('href') === path;
+    link.classList.toggle('active', active);
+    if (active) link.setAttribute('aria-current', 'page'); else link.removeAttribute('aria-current');
   });
-}));
+  document.querySelectorAll('.filter').forEach(button => {
+    const active = button.dataset.filter === activeFilter;
+    button.classList.toggle('active', active);
+    button.setAttribute('aria-pressed', String(active));
+  });
+  applyFilter();
+  renderStatus(lastState?.status || {});
+  window.scrollTo({ top: pageScroll.get(path) || 0, behavior: 'instant' });
+  if (focus) document.querySelector('#page-title').focus({ preventScroll: true });
+}
+
+document.addEventListener('click', event => {
+  const link = event.target.closest('a[data-route], a[data-preview]');
+  if (!link || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+  event.preventDefault();
+  if (link.hasAttribute('data-preview')) {
+    preview.open({ url: link.getAttribute('href'), kind: link.dataset.preview, title: link.dataset.previewTitle || link.textContent }, link);
+  } else {
+    const path = new URL(link.href).pathname;
+    if (path !== currentPage) {
+      window.history.pushState({ page: path }, '', path);
+      showPage(path, true);
+    }
+  }
+});
+window.addEventListener('popstate', event => {
+  if (preview.isOpen) preview.close(true);
+  showPage(window.location.pathname);
+  if (event.state?.preview) preview.open(event.state.preview, null, false);
+});
+
+window.history.scrollRestoration = 'manual';
+const initialPath = window.location.hash === '#settings' ? '/settings' : window.location.pathname;
+window.history.replaceState({ page: initialPath }, '', initialPath);
+showPage(initialPath);
 
 document.addEventListener('visibilitychange', () => { if (!document.hidden) refresh(true); });
 refresh();
@@ -387,5 +451,6 @@ window.addEventListener('pagehide', event => {
   if (event.persisted) return;
   clearInterval(statusTimer);
   clearInterval(libraryTimer);
+  preview.destroy();
   destroyImageGroups();
 });
