@@ -11,7 +11,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
-from platforms import PLATFORMS, parse_cookie, platform_dir, read_json, write_json, target_list, valid_target
+from platforms import PLATFORMS, cleanup_platform_media, parse_cookie, platform_dir, read_json, write_json, target_list, valid_target
 
 
 ROOT = Path(__file__).parent
@@ -155,12 +155,14 @@ def state(library_data: bool = True):
             "targets": config.get("targets", []),
             "username": config.get("username", ""),
             "has_password": bool(config.get("password")),
+            "enabled": config.get("enabled", True),
             "interval": config.get("interval", 300),
+            "cleanup_days": config.get("cleanup_days", 0),
             "post_limit": config.get("post_limit", 12),
-            "tiktok": {"targets": tiktok.get("targets", []), "username": tiktok.get("username", ""), "has_password": bool(tiktok.get("password")), "has_cookie": bool(tiktok.get("cookie")), "login_method": tiktok.get("login_method", "password")},
-            "threads": {"targets": threads.get("targets", []), "username": threads.get("username", ""), "has_password": bool(threads.get("password")), "has_cookie": bool(threads.get("cookie")), "login_method": threads.get("login_method", "password")},
-            "x": {"targets": x.get("targets", []), "username": x.get("username", ""), "has_password": bool(x.get("password")), "has_cookie": bool(x.get("cookie")), "login_method": x.get("login_method", "password")},
-            "douyin": {"targets": douyin.get("targets", []), "username": "", "has_password": False, "has_cookie": bool(douyin.get("cookie")), "login_method": douyin.get("login_method", "password")},
+            "tiktok": {"targets": tiktok.get("targets", []), "username": tiktok.get("username", ""), "has_password": bool(tiktok.get("password")), "has_cookie": bool(tiktok.get("cookie")), "login_method": tiktok.get("login_method", "password"), "enabled": tiktok.get("enabled", True), "interval": tiktok.get("interval", config.get("interval", 300)), "post_limit": tiktok.get("post_limit", config.get("post_limit", 12)), "cleanup_days": tiktok.get("cleanup_days", 0)},
+            "threads": {"targets": threads.get("targets", []), "username": threads.get("username", ""), "has_password": bool(threads.get("password")), "has_cookie": bool(threads.get("cookie")), "login_method": threads.get("login_method", "password"), "enabled": threads.get("enabled", True), "interval": threads.get("interval", config.get("interval", 300)), "post_limit": threads.get("post_limit", config.get("post_limit", 12)), "cleanup_days": threads.get("cleanup_days", 0)},
+            "x": {"targets": x.get("targets", []), "username": x.get("username", ""), "has_password": bool(x.get("password")), "has_cookie": bool(x.get("cookie")), "login_method": x.get("login_method", "password"), "enabled": x.get("enabled", True), "interval": x.get("interval", config.get("interval", 300)), "post_limit": x.get("post_limit", config.get("post_limit", 12)), "cleanup_days": x.get("cleanup_days", 0)},
+            "douyin": {"targets": douyin.get("targets", []), "username": "", "has_password": False, "has_cookie": bool(douyin.get("cookie")), "login_method": douyin.get("login_method", "password"), "enabled": douyin.get("enabled", True), "interval": douyin.get("interval", config.get("interval", 300)), "post_limit": douyin.get("post_limit", config.get("post_limit", 12)), "cleanup_days": douyin.get("cleanup_days", 0)},
         },
         "status": read_json(STATUS_PATH, {"state": "not_configured"}),
         "login_screenshot": changing_file_url(DATA_DIR / "login-required.png"),
@@ -184,18 +186,22 @@ async def save_config(request: Request):
     saved = existing if platform == "instagram" else existing.get(platform, {})
     password = str(payload.get("password", "")) or str(saved.get("password", ""))
     username = str(payload.get("username", "")).strip()
+    enabled = payload.get("enabled", saved.get("enabled", True))
+    if not isinstance(enabled, bool):
+        raise HTTPException(400, "平台开关必须为布尔值")
     try:
         targets = target_list(payload.get("targets", []), platform)
-        interval = max(60, min(86_400, int(payload.get("interval", existing.get("interval", 300)))))
-        post_limit = max(1, min(24, int(payload.get("post_limit", existing.get("post_limit", 12)))))
+        interval = max(60, min(86_400, int(payload.get("interval", saved.get("interval", existing.get("interval", 300))))))
+        cleanup_days = max(0, min(3650, int(payload.get("cleanup_days", saved.get("cleanup_days", 0)))))
+        post_limit = max(1, min(24, int(payload.get("post_limit", saved.get("post_limit", existing.get("post_limit", 12))))))
     except (ValueError, TypeError) as error:
         raise HTTPException(400, "请输入有效的用户名、检查间隔和条数") from error
-    if not targets:
+    if enabled and not targets:
         raise HTTPException(400, "请填写关注用户")
     if platform == "x" and any(not re.fullmatch(r"[a-z0-9_]{1,15}", target) for target in targets):
         raise HTTPException(400, "X 用户名只能包含字母、数字和下划线，最多 15 个字符")
-    selected = {"targets": targets, "username": username, "password": password}
-    if platform == "instagram" and (not username or not password):
+    selected = {"targets": targets, "username": username, "password": password, "enabled": enabled, "interval": interval, "post_limit": post_limit, "cleanup_days": cleanup_days}
+    if enabled and platform == "instagram" and (not username or not password):
         raise HTTPException(400, "请填写 Instagram 账号和密码")
     if platform in {"tiktok", "threads", "x", "douyin"}:
         label = {"tiktok": "TikTok", "threads": "Threads", "x": "X", "douyin": "抖音"}[platform]
@@ -203,12 +209,12 @@ async def save_config(request: Request):
         if method not in ({"password", "cookie", "qrcode"} if platform == "douyin" else {"password", "cookie"}):
             raise HTTPException(400, "请选择账号密码或 Cookie 登录")
         cookie = str(payload.get("cookie", "")) or str(saved.get("cookie", ""))
-        if method == "cookie":
+        if enabled and method == "cookie":
             try:
                 parse_cookie(cookie, f".{platform}.com", label)
             except ValueError as error:
                 raise HTTPException(400, str(error)) from error
-        elif bool(username) != bool(password):
+        elif enabled and bool(username) != bool(password):
             raise HTTPException(400, f"请同时填写{label}账号和密码，或都留空采集公开账号")
         elif platform == "douyin" and (username or password):
             raise HTTPException(400, "抖音仅支持公开模式或 Cookie 登录")
@@ -220,7 +226,8 @@ async def save_config(request: Request):
         config.update(selected)
     else:
         config[platform] = selected
-    config.update({"interval": interval, "post_limit": post_limit})
+    if platform == "instagram":
+        config["post_limit"] = post_limit
     write_json(CONFIG_PATH, config)
     root = platform_dir(DATA_DIR, platform)
     root.mkdir(parents=True, exist_ok=True)
@@ -278,6 +285,22 @@ def delete_item(target, item_id, platform: str = "instagram"):
         raise HTTPException(404)
     shutil.rmtree(path)
     return {"ok": True}
+
+
+@app.delete("/api/targets/{target}/latest")
+def delete_latest(target, platform: str = "instagram"):
+    path = target_dir_or_404(target, platform) / "latest.png"
+    if not path.is_file():
+        raise HTTPException(404)
+    path.unlink()
+    return {"ok": True}
+
+
+@app.delete("/api/cleanup")
+def cleanup_platform(platform: str = "instagram"):
+    if platform not in PLATFORMS:
+        raise HTTPException(400, "未知平台")
+    return {"ok": True, **cleanup_platform_media(DATA_DIR, platform)}
 
 
 @app.post("/api/verification")

@@ -16,7 +16,9 @@ const elements = {
   passwordNote: document.querySelector('#password-note'),
   targets: document.querySelector('#ig-targets'),
   interval: document.querySelector('#interval'),
+  enabled: document.querySelector('#platform-enabled'),
   postLimit: document.querySelector('#post-limit'),
+  cleanupDays: document.querySelector('#cleanup-days'),
   verificationPanel: document.querySelector('#verification-panel'),
   verificationCode: document.querySelector('#verification-code'),
   toast: document.querySelector('#toast'),
@@ -100,6 +102,7 @@ function renderStatus(globalStatus = {}) {
     not_configured: ['等待配置', `填写 ${brand} 关注用户后开始采集`],
     running: ['正在检查', '浏览器正在读取关注用户的最新内容'],
     ready: ['采集正常', '会话有效，等待下一次检查'],
+    disabled: ['平台已关闭', '不会执行采集，也不会显示在手机底栏'],
     error: ['需要处理', status.error || '检查失败，请查看目标状态'],
   };
   let [title, detail] = errors[status.error_code] || labels[status.state] || labels.not_configured;
@@ -137,7 +140,7 @@ function mediaCard(target, item, snapshot = false) {
   const files = snapshot ? [{ name: 'latest.png', url: item.latest }] : item.files;
   const fileLinks = files.map(file => `
     <a href="${escapeHtml(file.url)}?download=1"><span>${escapeHtml(file.name)}</span><small>下载</small></a>`).join('');
-  const deleteButton = snapshot ? '' : `<button class="delete-button" type="button" data-platform="${platform}" data-target="${escapeHtml(name)}" data-item="${escapeHtml(item.id)}">删除</button>`;
+  const deleteButton = snapshot ? `<button class="delete-button" type="button" data-platform="${platform}" data-target="${escapeHtml(name)}" data-latest="1">删除截图</button>` : `<button class="delete-button" type="button" data-platform="${platform}" data-target="${escapeHtml(name)}" data-item="${escapeHtml(item.id)}">删除</button>`;
   return `
     <article class="media-card" data-kind="${kind}" data-media-key="${escapeHtml(key)}:video:${escapeHtml(item.id)}" data-signature="${escapeHtml(JSON.stringify(item))}">
       <div class="media-frame">${source}<span class="file-badge">${kind === 'video' ? '视频' : kind === 'screenshot' ? '截图' : '图片'}</span></div>
@@ -179,16 +182,18 @@ function renderLibrary(library) {
     return;
   }
   const template = document.createElement('template');
+  const mediaGroup = (kind, label, cards, open = false) => cards ? `<details class="media-kind-group" data-media-group="${kind}"${open ? ' open' : ''}><summary>${label}</summary><div class="media-grid">${cards}</div></details>` : '';
   template.innerHTML = library.map(target => {
     const platform = target.platform || 'instagram', key = target.key || target.name;
     const profileUrl = platform === 'tiktok' ? `https://www.tiktok.com/@${encodeURIComponent(target.name)}` : platform === 'douyin' ? `https://www.douyin.com/user/${encodeURIComponent(target.name)}` : platform === 'threads' ? `https://www.threads.com/@${encodeURIComponent(target.name)}` : platform === 'x' ? `https://x.com/${encodeURIComponent(target.name)}` : `https://www.instagram.com/${encodeURIComponent(target.name)}/`;
-    const photos = imageGroupsMarkup(target);
-    const cards = target.items.filter(item => item.files.some(file => file.kind === 'video')).map(item => mediaCard(target, item)).join('');
+    const photos = imageGroupsMarkup(target, 'image');
+    const screenshots = imageGroupsMarkup(target, 'screenshot');
+    const videos = target.items.filter(item => item.files.some(file => file.kind === 'video')).map(item => mediaCard(target, item)).join('');
     const textCards = target.items.filter(item => item.files.some(file => file.kind === 'text') && !item.files.some(file => file.kind === 'video' || (file.kind === 'image' && file.name !== 'page.png'))).map(item => textCard(target, item)).join('');
     const state = target.status.error ? escapeHtml(targetState(target.status)) : target.status.failed_items?.length ? `${target.items.length} 条归档，${target.status.failed_items.length} 条待重试` : `${target.items.length} 条归档`;
     return `<section class="target-block" data-target-key="${escapeHtml(key)}" data-platform="${platform}">
       <div class="target-heading"><h3><span class="platform-name"><svg class="platform-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="/static/icons/platforms.svg#${platform}"/></svg>${platformNames[platform]}</span>@${escapeHtml(target.name)} <span class="rail-state">${state}</span></h3><div class="target-actions"><a href="${profileUrl}" target="_blank" rel="noreferrer">打开主页</a><button class="delete-button" type="button" data-platform="${platform}" data-target="${escapeHtml(target.name)}">删除此用户</button></div></div>
-      <div class="media-grid">${photos}${cards}${textCards}</div>
+      <div class="media-groups">${mediaGroup('image', '图片', photos, true)}${mediaGroup('video', '视频', videos)}${mediaGroup('text', '文字', textCards)}${mediaGroup('screenshot', '截图', screenshots)}</div>
     </section>`;
   }).join('');
   // Keep live canvases, focus and video playback intact during status polling.
@@ -200,19 +205,30 @@ function renderLibrary(library) {
       const heading = section.querySelector('.target-heading');
       const newHeading = desired.querySelector('.target-heading');
       if (heading.innerHTML !== newHeading.innerHTML) heading.replaceChildren(...newHeading.childNodes);
-      const grid = section.querySelector('.media-grid');
-      const oldCards = new Map([...grid.children].map(card => [card.dataset.mediaKey, card]));
-      let nextCard = grid.firstElementChild;
-      for (const card of [...desired.querySelector('.media-grid').children]) {
-        const old = oldCards.get(card.dataset.mediaKey);
-        const keep = old?.dataset.signature === card.dataset.signature ? old : card;
-        if (keep !== nextCard) grid.insertBefore(keep, nextCard);
-        nextCard = keep.nextElementSibling;
-        oldCards.delete(card.dataset.mediaKey);
-        if (old && keep !== old) old.remove();
-        nextCard = keep.nextElementSibling;
+      const groups = section.querySelector('.media-groups');
+      const oldGroups = new Map([...groups.children].map(group => [group.dataset.mediaGroup, group]));
+      let nextGroup = groups.firstElementChild;
+      for (const wanted of [...desired.querySelector('.media-groups').children]) {
+        const group = oldGroups.get(wanted.dataset.mediaGroup) || wanted;
+        if (group !== wanted) {
+          const grid = group.querySelector('.media-grid');
+          const oldCards = new Map([...grid.children].map(card => [card.dataset.mediaKey, card]));
+          let nextCard = grid.firstElementChild;
+          for (const card of [...wanted.querySelector('.media-grid').children]) {
+            const old = oldCards.get(card.dataset.mediaKey);
+            const keep = old?.dataset.signature === card.dataset.signature ? old : card;
+            if (keep !== nextCard) grid.insertBefore(keep, nextCard);
+            nextCard = keep.nextElementSibling;
+            oldCards.delete(card.dataset.mediaKey);
+            if (old && keep !== old) old.remove();
+          }
+          oldCards.forEach(card => card.remove());
+        }
+        if (group !== nextGroup) groups.insertBefore(group, nextGroup);
+        nextGroup = group.nextElementSibling;
+        oldGroups.delete(wanted.dataset.mediaGroup);
       }
-      oldCards.forEach(card => card.remove());
+      oldGroups.forEach(group => group.remove());
     }
     if (section !== cursor) elements.library.insertBefore(section, cursor);
     cursor = section.nextElementSibling;
@@ -238,6 +254,9 @@ function applyFilter() {
   document.querySelectorAll('.media-card').forEach(card => {
     card.hidden = activeFilter !== 'all' && card.dataset.kind !== activeFilter;
   });
+  document.querySelectorAll('.media-kind-group').forEach(group => {
+    group.hidden = activeFilter !== 'all' && group.dataset.mediaGroup !== activeFilter;
+  });
 }
 
 function hydrateForm(config) {
@@ -245,8 +264,11 @@ function hydrateForm(config) {
   const selected = selectedPlatform === 'instagram' ? config : config[selectedPlatform] || {};
   elements.username.value = selected.username || '';
   elements.targets.value = (selected.targets || []).join(', ');
-  elements.interval.value = String(config.interval || 300);
+  elements.enabled.checked = selected.enabled !== false;
+  elements.interval.value = String(selected.interval || config.interval || 300);
   elements.postLimit.value = String(config.post_limit || 12);
+  elements.postLimit.value = String(selected.post_limit || config.post_limit || 12);
+  elements.cleanupDays.value = String(selected.cleanup_days || 0);
   elements.password.placeholder = selected.has_password ? '已保存，留空保持不变' : '输入登录密码';
   elements.passwordNote.textContent = selected.has_password ? '已保存，留空保持不变' : `用于建立 ${platformNames[selectedPlatform]} 浏览器会话`;
   elements.loginMethod.value = selected.login_method || 'password';
@@ -274,13 +296,23 @@ function updateLoginFields() {
   document.querySelector('#public-note').textContent = qrcode ? '打开二维码后长按图片并“存储到照片”，再用抖音扫一扫从相册选择。二维码有效期约 2 分钟。' : douyin ? '公开访问受限时，请使用二维码或已登录浏览器的 Cookie。' : `采集公开 ${platformNames[selectedPlatform]} 账号时，账号和密码可以都留空。`;
   elements.username.closest('label').hidden = cookie || douyin;
   elements.password.closest('label').hidden = cookie || douyin;
-  elements.username.required = !external;
+  elements.username.required = elements.enabled.checked && !external;
+  elements.targets.required = elements.enabled.checked;
   elements.username.placeholder = selectedPlatform === 'x' ? 'X 用户名' : external ? '邮箱或用户名' : '手机号、邮箱或用户名';
   elements.targets.placeholder = douyin ? '抖音主页链接或 sec_user_id' : '例如 instagram, natgeo';
   document.querySelector('#targets-note').textContent = douyin ? '粘贴 www.douyin.com/user/... 主页链接，多个用逗号分隔' : '多个用户名用逗号分隔，不需要输入 @';
   document.querySelector('#reset-session').textContent = `重置 ${platformNames[selectedPlatform]} 会话`;
-  document.querySelector('#platform-summary').textContent = platformNames[selectedPlatform];
+  document.querySelector('#platform-summary').textContent = `${platformNames[selectedPlatform]}${elements.enabled.checked ? '' : '（已关闭）'}`;
+  document.querySelector('#schedule-summary').textContent = `${elements.interval.selectedOptions[0]?.textContent || ''}，${elements.postLimit.selectedOptions[0]?.textContent || ''}`;
   renderStatus(lastState?.status || {});
+}
+
+function syncPlatformNavigation(config) {
+  document.querySelectorAll('.bottom-nav a[data-route]').forEach(link => {
+    const platform = pages[link.getAttribute('href')]?.platform;
+    const selected = platform === 'instagram' ? config : config[platform];
+    link.hidden = platform && platform !== 'all' && selected?.enabled === false;
+  });
 }
 
 elements.platform.addEventListener('change', () => {
@@ -292,6 +324,9 @@ elements.platform.addEventListener('change', () => {
   renderStatus(lastState?.status || {});
 });
 elements.loginMethod.addEventListener('change', updateLoginFields);
+elements.enabled.addEventListener('change', updateLoginFields);
+elements.interval.addEventListener('change', updateLoginFields);
+elements.postLimit.addEventListener('change', updateLoginFields);
 elements.form.addEventListener('invalid', event => {
   const group = event.target.closest('details');
   if (group) group.open = true;
@@ -300,6 +335,7 @@ elements.form.addEventListener('invalid', event => {
 async function refresh(includeLibrary = true) {
   try {
     lastState = await api(`/api/state?library_data=${includeLibrary}`);
+    syncPlatformNavigation(lastState.config);
     renderStatus(lastState.status);
     if (lastState.library) {
       const signature = JSON.stringify(lastState.library);
@@ -334,6 +370,7 @@ document.querySelectorAll('.filter').forEach(button => button.addEventListener('
   });
   activeFilter = button.dataset.filter;
   pageFilters.set(currentPage, activeFilter);
+  if (activeFilter !== 'all') document.querySelectorAll(`.media-kind-group[data-media-group="${activeFilter}"]`).forEach(group => group.open = true);
   applyFilter();
 }));
 
@@ -345,14 +382,15 @@ elements.library.addEventListener('click', async event => {
   if (!button) return;
   const target = button.dataset.target;
   const item = button.dataset.item;
+  const latest = button.dataset.latest;
   const platform = button.dataset.platform || 'instagram';
-  const label = item ? '删除这条内容及其文件？' : `删除 @${target} 的全部截图和归档？`;
+  const label = latest ? `删除 @${target} 的主页截图？` : item ? '删除这条内容及其文件？' : `删除 @${target} 的全部截图和归档？`;
   if (!confirm(label)) return;
   button.disabled = true;
   try {
-    const path = item ? `/api/targets/${target}/items/${item}` : `/api/targets/${target}`;
+    const path = latest ? `/api/targets/${target}/latest` : item ? `/api/targets/${target}/items/${item}` : `/api/targets/${target}`;
     await api(`${path}?platform=${platform}`, { method: 'DELETE' });
-    notify(item ? '内容已删除' : '用户记录已删除');
+    notify(latest ? '主页截图已删除' : item ? '内容已删除' : '用户记录已删除');
     hydrated = false;
     librarySignature = '';
     await refresh(true);
@@ -372,6 +410,7 @@ elements.form.addEventListener('submit', async event => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         platform: selectedPlatform,
+        enabled: elements.enabled.checked,
         login_method: elements.loginMethod.value,
         cookie: elements.cookie.value,
         username: elements.username.value,
@@ -379,6 +418,7 @@ elements.form.addEventListener('submit', async event => {
         targets: elements.targets.value,
         interval: Number(elements.interval.value),
         post_limit: Number(elements.postLimit.value),
+        cleanup_days: Number(elements.cleanupDays.value),
       }),
     });
     elements.password.value = elements.cookie.value = '';
@@ -399,6 +439,22 @@ document.querySelector('#reset-session').addEventListener('click', async () => {
     notify('旧会话将在下一轮清除');
   } catch (error) {
     notify(error.message);
+  }
+});
+
+document.querySelector('#cleanup-platform').addEventListener('click', async event => {
+  if (!confirm(`清理 ${platformNames[selectedPlatform]} 的主页截图、帖子截图和全部视频？原图与文字会保留。`)) return;
+  const button = event.currentTarget;
+  button.disabled = true;
+  try {
+    const result = await api(`/api/cleanup?platform=${selectedPlatform}`, { method: 'DELETE' });
+    notify(`已清理 ${result.screenshots} 张截图、${result.videos} 个视频`);
+    librarySignature = '';
+    await refresh(true);
+  } catch (error) {
+    notify(error.message);
+  } finally {
+    button.disabled = false;
   }
 });
 
@@ -438,7 +494,7 @@ function showPage(path, focus = false) {
   document.querySelector('#settings').hidden = !settings;
   document.querySelector('#library').hidden = settings;
   document.querySelector('#page-title').textContent = page.title;
-  document.title = `${page.title} — ig luv`;
+  document.title = `${page.title} — IG Luv`;
   document.querySelector('#page-description').textContent = settings ? '凭据只保存在这台 VPS。成功登录后会复用浏览器会话。' : '关注的动态、截图和原始媒体。';
   const icon = document.querySelector('#page-brand');
   icon.hidden = page.platform === 'all';

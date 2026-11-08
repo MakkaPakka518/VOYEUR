@@ -14,7 +14,7 @@ import threads
 import x as x_platform
 import douyin
 import web
-from platforms import parse_cookie, read_json, target_list, write_json
+from platforms import cleanup_platform_media, parse_cookie, read_json, target_list, write_json
 
 
 class PlatformTests(unittest.TestCase):
@@ -52,8 +52,8 @@ class PlatformTests(unittest.TestCase):
         return self.client.post("/api/config", json={"platform": "douyin", "targets": ["https://www.douyin.com/user/MS4wLjAB_Test-ID"], "username": "", "password": "", **options})
 
     def test_config_preserves_instagram_and_hides_both_secrets(self):
-        self.assertEqual(self.save_tiktok().status_code, 200)
-        self.assertEqual(self.save_threads().status_code, 200)
+        self.assertEqual(self.save_tiktok(interval=60, post_limit=6, cleanup_days=7).status_code, 200)
+        self.assertEqual(self.save_threads(interval=900, post_limit=24, cleanup_days=30).status_code, 200)
         self.assertEqual(self.save_x().status_code, 200)
         self.assertEqual(self.save_douyin().status_code, 200)
         saved = read_json(self.root / "config.json", {})
@@ -62,6 +62,8 @@ class PlatformTests(unittest.TestCase):
         self.assertEqual(saved["tiktok"]["password"], "tk-secret")
         self.assertEqual(saved["threads"]["password"], "th-secret")
         self.assertEqual(saved["x"]["password"], "x-secret")
+        self.assertEqual((saved["tiktok"]["interval"], saved["tiktok"]["post_limit"], saved["tiktok"]["cleanup_days"]), (60, 6, 7))
+        self.assertEqual((saved["threads"]["interval"], saved["threads"]["post_limit"], saved["threads"]["cleanup_days"]), (900, 24, 30))
         self.assertEqual((self.root / "config.json").stat().st_mode & 0o777, 0o600)
         response = self.client.get("/api/state").json()
         self.assertTrue(response["config"]["tiktok"]["has_password"])
@@ -70,6 +72,7 @@ class PlatformTests(unittest.TestCase):
         self.assertNotIn("th-secret", str(response))
         self.assertNotIn("x-secret", str(response))
         self.assertEqual(response["config"]["douyin"]["targets"], ["MS4wLjAB_Test-ID"])
+        self.assertEqual(response["config"]["tiktok"]["post_limit"], 6)
         self.client.post("/api/config", json={**self.ig, "password": ""})
         self.assertEqual(read_json(self.root / "config.json", {})["tiktok"]["password"], "tk-secret")
 
@@ -82,6 +85,8 @@ class PlatformTests(unittest.TestCase):
             response = guest.get("/settings", follow_redirects=False)
             self.assertEqual(response.status_code, 303)
             self.assertEqual(response.headers["location"], "/login")
+            response = guest.post("/login", data={"password": "test-panel-password"}, follow_redirects=False)
+            self.assertIn("Max-Age=2592000", response.headers["set-cookie"])
 
     def test_cookie_and_password_method_switch_keeps_credentials(self):
         self.assertEqual(self.save_tiktok().status_code, 200)
@@ -124,6 +129,8 @@ class PlatformTests(unittest.TestCase):
         self.assertEqual(self.save_x(username="mail@example.com", password="secret").status_code, 400)
         self.assertEqual(self.save_douyin(targets=["https://evil.example/user/test"]).status_code, 400)
         self.assertEqual(self.save_douyin(username="account", password="secret").status_code, 400)
+        self.assertEqual(self.save_x(enabled=False, targets=[]).status_code, 200)
+        self.assertFalse(self.client.get("/api/state").json()["config"]["x"]["enabled"])
 
     def test_library_and_deletion_isolate_same_username_and_post_id(self):
         for folder in (self.root, self.root / "tiktok", self.root / "threads", self.root / "x", self.root / "douyin"):
@@ -161,6 +168,39 @@ class PlatformTests(unittest.TestCase):
         self.assertEqual(self.client.delete(f"/api/targets/{case_target}?platform=douyin").status_code, 200)
         self.assertTrue(lower_item.exists())
 
+    def test_homepage_and_platform_media_cleanup_are_scoped(self):
+        x_target = self.root / "x/targets/demo"
+        item = x_target / "items/123"
+        item.mkdir(parents=True)
+        (x_target / "latest.png").write_bytes(b"latest")
+        (item / "page.png").write_bytes(b"page")
+        (item / "media-01.mp4").write_bytes(b"video")
+        (item / "media-01.jpg").write_bytes(b"image")
+        write_json(item / "metadata.json", {"captured_at": "2026-11-08T00:00:00Z"})
+        other = self.root / "threads/targets/demo/items/123"
+        other.mkdir(parents=True)
+        (other / "media-01.mp4").write_bytes(b"other")
+
+        self.assertEqual(self.client.delete("/api/targets/demo/latest?platform=x").status_code, 200)
+        self.assertFalse((x_target / "latest.png").exists())
+        result = self.client.delete("/api/cleanup?platform=x").json()
+        self.assertEqual((result["screenshots"], result["videos"]), (1, 1))
+        self.assertTrue((item / "media-01.jpg").exists())
+        self.assertTrue((item / "metadata.json").exists())
+        self.assertTrue((other / "media-01.mp4").exists())
+
+        (x_target / "latest.png").write_bytes(b"old")
+        (item / "media-02.mp4").write_bytes(b"old-video")
+        (item / "page.png").write_bytes(b"fresh")
+        (item / "media-03.mp4").write_bytes(b"fresh-video")
+        old = 1_700_000_000
+        os.utime(x_target / "latest.png", (old, old))
+        os.utime(item / "media-02.mp4", (old, old))
+        removed = cleanup_platform_media(self.root, "x", 1)
+        self.assertEqual((removed["screenshots"], removed["videos"]), (1, 1))
+        self.assertTrue((item / "page.png").exists())
+        self.assertTrue((item / "media-03.mp4").exists())
+
     def test_verification_and_reset_are_platform_scoped(self):
         self.assertEqual(self.client.post("/api/verification?platform=tiktok", json={"code": "123456"}).status_code, 200)
         self.assertEqual(read_json(self.root / "tiktok/verification.json", {}), {"code": "123456"})
@@ -172,8 +212,8 @@ class PlatformTests(unittest.TestCase):
         self.assertFalse((self.root / "tiktok/verification.json").exists())
 
     def test_tiktok_runs_even_when_instagram_login_fails(self):
-        self.save_tiktok()
-        self.save_threads()
+        self.save_tiktok(post_limit=6)
+        self.save_threads(post_limit=24)
         self.save_x()
         self.save_douyin()
         manager = MagicMock()
@@ -189,12 +229,27 @@ class PlatformTests(unittest.TestCase):
         run_threads.assert_called_once()
         run_x.assert_called_once()
         run_douyin.assert_called_once()
+        self.assertEqual(run_tiktok.call_args.args[-1], 6)
+        self.assertEqual(run_threads.call_args.args[-1], 24)
         status = read_json(self.root / "status.json", {})
         self.assertEqual(status["platforms"]["instagram"]["state"], "error")
         self.assertEqual(status["platforms"]["tiktok"]["state"], "ready")
         self.assertEqual(status["platforms"]["threads"]["state"], "ready")
         self.assertEqual(status["platforms"]["x"]["state"], "ready")
         self.assertEqual(status["platforms"]["douyin"]["state"], "ready")
+
+    def test_disabled_platform_is_not_collected_but_is_auto_cleaned(self):
+        write_json(self.root / "config.json", {**self.ig, "douyin": {"targets": ["MS4wLjAB_Test-ID"], "enabled": False, "cleanup_days": 7}})
+        manager = MagicMock()
+        with patch.object(app, "sync_playwright", return_value=manager), \
+             patch.object(app, "run_cycle", return_value={"state": "ready", "targets": []}), \
+             patch.object(app, "run_douyin_cycle") as run_douyin, \
+             patch.object(app, "cleanup_platform_media") as cleanup, \
+             patch.object(sys, "argv", ["app.py", "--once"]):
+            app.main()
+        run_douyin.assert_not_called()
+        cleanup.assert_any_call(self.root, "douyin", 7)
+        self.assertEqual(read_json(self.root / "status.json", {})["platforms"]["douyin"]["state"], "disabled")
 
     def test_config_trigger_arriving_during_a_cycle_is_not_lost(self):
         (self.root / "run.trigger").write_text("new settings")

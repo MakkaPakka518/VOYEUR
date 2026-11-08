@@ -11,7 +11,7 @@ Private web panel and Playwright collector for Instagram, TikTok, Douyin, Thread
 - Threads public collection plus account/password and Cookie login fallbacks.
 - X public collection plus account/password and Cookie login fallbacks.
 - Platform-specific configuration, sessions, archives, status and deletion.
-- Configurable targets, polling interval, and how many recent posts to check.
+- Per-platform enable switch, polling interval, recent-post limit and automatic cleanup age.
 - Per-post screenshots plus original images and MP4 videos.
 - Browse, open, download, and delete archived content from the panel.
 - Ink-spread photo and screenshot carousels, with near-full-width photos on phones.
@@ -49,8 +49,9 @@ reset the TikTok session, or switch to Cookie login.
 Private profiles require a valid session with access to them. Expired Cookies and missing media are
 reported as failures, and incomplete downloads are retried instead of being marked as archived.
 
-All platforms use the same polling interval and per-user post limit. Their browser sessions are opened
-sequentially to fit the VPS memory limit. Library pages separate Instagram, TikTok, Douyin, Threads, X and the combined view.
+Each platform has its own polling interval and per-user post limit. Enabled browser sessions are opened
+sequentially to fit the VPS memory limit. Disabled platforms stop collecting and disappear from the mobile bar.
+Library pages separate Instagram, TikTok, Douyin, Threads, X and the combined view.
 
 ## Douyin
 
@@ -133,6 +134,11 @@ On phones, the viewer removes the surrounding scene whitespace so photos are nea
 The viewer uses local WebGL shaders, falls back to a Canvas2D reveal, and respects reduced motion.
 Complete source, notices and the embedded default demo atlas are under
 `static/components/ink-spread-carousel/`. Runtime rendering does not depend on LeiBox or external assets.
+
+Images, videos, text and screenshots have separate collapsible sections. Images start open; the other
+sections start closed. Homepage screenshots can be deleted individually. Settings can also remove all
+homepage/post screenshots and MP4 files for one platform while preserving original images, text and
+metadata. Automatic cleanup uses each file's age; `0` days disables it.
 
 ## Viewer tests
 

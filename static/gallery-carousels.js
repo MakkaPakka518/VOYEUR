@@ -27,7 +27,7 @@ function details(group, index) {
       <a href="${escapeHtml(photo.url)}" data-preview="image" data-preview-title="@${escapeHtml(group.target)} ${escapeHtml(title)}">查看原图</a>
       <a href="${escapeHtml(photo.url)}${photo.url.includes('?') ? '&' : '?'}download=1">下载</a>
       ${photo.item?.source_url ? `<a href="${escapeHtml(photo.item.source_url)}" target="_blank" rel="noreferrer">原帖</a>` : ''}
-      ${photo.item ? `<button class="delete-button" type="button" data-platform="${group.platform}" data-target="${escapeHtml(group.target)}" data-item="${escapeHtml(photo.item.id)}">删除此帖</button>` : ''}
+      ${photo.item ? `<button class="delete-button" type="button" data-platform="${group.platform}" data-target="${escapeHtml(group.target)}" data-item="${escapeHtml(photo.item.id)}">删除此帖</button>` : photo.latest ? `<button class="delete-button" type="button" data-platform="${group.platform}" data-target="${escapeHtml(group.target)}" data-latest="1">删除截图</button>` : ''}
     </div>`;
 }
 
@@ -35,11 +35,12 @@ function showDetails(card, group, index) {
   card.querySelector('.media-body').innerHTML = details(group, index);
 }
 
-export function imageGroupsMarkup(target) {
+export function imageGroupsMarkup(target, requestedKind) {
   const photos = [], screenshots = [];
   if (target.latest) screenshots.push({
     url: `${target.latest}?v=${encodeURIComponent(target.status.checked_at || '')}`,
     alt: `@${target.name} 的最新主页截图`,
+    latest: true,
   });
   for (const item of target.items) {
     for (const file of item.files) {
@@ -53,6 +54,7 @@ export function imageGroupsMarkup(target) {
   }
   let markup = '';
   for (const [kind, collection] of [['image', photos], ['screenshot', screenshots]]) {
+    if (requestedKind && requestedKind !== kind) continue;
     for (let offset = 0; offset < collection.length; offset += 12) {
       const key = `${target.key || target.name}:${kind}:${offset / 12}`;
       const group = { target: target.name, platform: target.platform || 'instagram', photos: collection.slice(offset, offset + 12) };

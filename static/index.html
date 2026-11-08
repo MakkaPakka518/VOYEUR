@@ -5,13 +5,13 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#13243a">
   <script>try{const t=localStorage.getItem('ig-luv-theme')||'light';document.documentElement.dataset.theme=t;document.documentElement.style.colorScheme=t;if(t==='dark')document.querySelector('meta[name="theme-color"]').content='#0b1522'}catch{document.documentElement.dataset.theme='light'}</script>
-  <title>ig luv</title>
+  <title>IG Luv</title>
   <link rel="stylesheet" href="/static/styles.css">
 </head>
 <body>
   <div class="app-shell">
     <aside class="sidebar">
-      <a class="wordmark" href="/" data-route aria-label="ig luv 首页"><span class="wordmark-mark">ig</span><span>luv</span></a>
+      <a class="wordmark" href="/" data-route aria-label="IG Luv 首页"><span class="wordmark-mark"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21s-7.2-4.6-9.3-9C1.2 8.8 3.1 5 6.7 5c2 0 3.4 1.1 5.3 3.2C13.9 6.1 15.3 5 17.3 5c3.6 0 5.5 3.8 4 7C19.2 16.4 12 21 12 21Z"/></svg></span><span>IG Luv</span></a>
       <nav class="side-nav" aria-label="主导航">
         <a class="nav-link active" href="/" data-route aria-current="page"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5.5h16v13H4zM8 5.5V3m8 2.5V3M4 9h16"/></svg>全部</a>
         <a class="nav-link" href="/instagram" data-route><svg class="platform-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="/static/icons/platforms.svg#instagram"/></svg>Instagram</a>
@@ -25,13 +25,13 @@
     </aside>
     <main class="workspace">
       <header class="mobile-header">
-        <a class="wordmark" href="/" data-route><span class="wordmark-mark">ig</span><span>luv</span></a>
-        <div class="mobile-header-actions"><button class="icon-button" id="mobile-run" type="button" aria-label="立即检查"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11a8 8 0 1 0-2.3 5.7M20 5v6h-6"/></svg></button><div class="theme-toggle" aria-label="主题切换"></div></div>
+        <a class="wordmark" href="/" data-route><span class="wordmark-mark"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21s-7.2-4.6-9.3-9C1.2 8.8 3.1 5 6.7 5c2 0 3.4 1.1 5.3 3.2C13.9 6.1 15.3 5 17.3 5c3.6 0 5.5 3.8 4 7C19.2 16.4 12 21 12 21Z"/></svg></span><span>IG Luv</span></a>
+        <div class="mobile-header-actions"><button class="icon-button top-refresh-button" id="mobile-run" type="button" aria-label="立即检查"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11a8 8 0 1 0-2.3 5.7M20 5v6h-6"/></svg></button><div class="theme-toggle" aria-label="主题切换"></div></div>
       </header>
       <div class="workspace-inner">
         <header class="page-header">
           <div><div class="page-title-row"><svg id="page-brand" class="platform-icon" viewBox="0 0 24 24" aria-hidden="true" hidden><use/></svg><h1 id="page-title" tabindex="-1">全部媒体</h1></div><p id="page-description">关注的动态、截图和原始媒体。</p></div>
-          <div class="page-header-actions"><button class="primary-button" id="run-now" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11a8 8 0 1 0-2.3 5.7M20 5v6h-6"/></svg>立即检查</button><div class="theme-toggle" aria-label="主题切换"></div></div>
+          <div class="page-header-actions"><button class="primary-button top-refresh-button" id="run-now" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11a8 8 0 1 0-2.3 5.7M20 5v6h-6"/></svg>立即检查</button><div class="theme-toggle" aria-label="主题切换"></div></div>
         </header>
         <section class="status-band" id="status-band" aria-live="polite">
           <div class="status-copy"><span class="status-dot"></span><strong id="status-title">正在读取状态</strong><span id="status-detail">请稍候</span><a id="status-action" href="#" data-preview="image" hidden>查看登录页面</a></div>
@@ -53,6 +53,7 @@
               <summary><span>平台与登录</span><span id="platform-summary" class="summary-value">Instagram</span></summary>
               <div class="settings-fields">
                 <label class="wide-field"><span>配置平台</span><select id="settings-platform"><option value="instagram">Instagram</option><option value="tiktok">TikTok</option><option value="douyin">抖音</option><option value="threads">Threads</option><option value="x">X</option></select></label>
+                <label class="platform-enabled-field wide-field"><span><strong>启用此平台</strong><small>关闭后停止采集，并从手机底栏隐藏</small></span><input id="platform-enabled" type="checkbox" role="switch" checked></label>
                 <label id="login-method-field" class="wide-field" hidden><span id="login-method-label">TikTok 登录方式</span><select id="login-method"><option value="password">账号密码</option><option value="cookie">导入 Cookie</option><option value="qrcode" hidden disabled>二维码登录</option></select></label>
                 <div id="verification-panel" class="verification-panel wide-field" hidden>
                   <div><strong id="verification-title">输入 Instagram 验证码</strong><p>填写短信、邮箱或验证器收到的代码，采集器会继续当前登录。</p></div>
@@ -70,13 +71,14 @@
               <div class="settings-fields"><label class="wide-field"><span>关注用户</span><input id="ig-targets" name="targets" required placeholder="例如 instagram, natgeo" autocapitalize="none" spellcheck="false"><small id="targets-note">多个用户名用逗号分隔，不需要输入 @</small></label></div>
             </details>
             <details id="schedule-settings" class="settings-group">
-              <summary><span>采集频率</span></summary>
+              <summary><span>采集频率</span><span id="schedule-summary" class="summary-value">5 分钟</span></summary>
               <div class="settings-fields">
                 <label><span>检查间隔</span><select id="interval" name="interval"><option value="60">1 分钟</option><option value="300">5 分钟</option><option value="900">15 分钟</option><option value="3600">1 小时</option></select></label>
                 <label><span>每人检查</span><select id="post-limit" name="post_limit"><option value="6">最近 6 条</option><option value="12">最近 12 条</option><option value="24">最近 24 条</option></select></label>
+                <label class="wide-field"><span>自动清理天数</span><input id="cleanup-days" type="number" inputmode="numeric" min="0" max="3650" step="1" value="0"><small>0 表示关闭；到期后删除此平台的主页截图、帖子截图和视频，保留原图与文字</small></label>
               </div>
             </details>
-            <div class="form-actions"><button class="primary-button" type="submit">保存并连接</button><button class="secondary-button" id="reset-session" type="button">重置 Instagram 会话</button></div>
+            <div class="form-actions"><button class="primary-button" type="submit">保存并连接</button><button class="secondary-button" id="reset-session" type="button">重置 Instagram 会话</button><button class="secondary-button" id="cleanup-platform" type="button">清理此平台截图和视频</button></div>
           </form>
         </section>
       </div>

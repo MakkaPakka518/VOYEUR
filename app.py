@@ -11,7 +11,7 @@ from urllib.parse import urlparse
 from playwright.sync_api import TimeoutError as PlaywrightTimeout
 from playwright.sync_api import sync_playwright
 
-from platforms import read_json, write_json, target_list
+from platforms import cleanup_platform_media, read_json, write_json, target_list
 from tiktok import run_cycle as run_tiktok_cycle
 from threads import run_cycle as run_threads_cycle
 from x import run_cycle as run_x_cycle
@@ -38,6 +38,8 @@ def now():
 
 def load_config():
     saved = read_json(CONFIG_PATH, {})
+    default_interval = max(60, min(86_400, int(saved.get("interval", 300))))
+    default_post_limit = max(1, min(24, int(saved.get("post_limit", 12))))
     targets = target_list(saved.get("targets", []), "instagram")
     tiktok = dict(saved.get("tiktok", {}))
     tiktok["targets"] = target_list(tiktok.get("targets", []), "tiktok")
@@ -47,12 +49,19 @@ def load_config():
     x["targets"] = target_list(x.get("targets", []), "x")
     douyin = dict(saved.get("douyin", {}))
     douyin["targets"] = target_list(douyin.get("targets", []), "douyin")
+    for selected in (tiktok, threads, x, douyin):
+        selected["enabled"] = selected.get("enabled", True) if isinstance(selected.get("enabled", True), bool) else True
+        selected["interval"] = max(60, min(86_400, int(selected.get("interval", default_interval))))
+        selected["cleanup_days"] = max(0, min(3650, int(selected.get("cleanup_days", 0))))
+        selected["post_limit"] = max(1, min(24, int(selected.get("post_limit", default_post_limit))))
     return {
         "targets": targets,
         "username": str(saved.get("username", "")),
         "password": str(saved.get("password", "")),
-        "interval": max(60, min(86_400, int(saved.get("interval", 300)))),
-        "post_limit": max(1, min(24, int(saved.get("post_limit", 12)))),
+        "enabled": saved.get("enabled", True) if isinstance(saved.get("enabled", True), bool) else True,
+        "interval": default_interval,
+        "cleanup_days": max(0, min(3650, int(saved.get("cleanup_days", 0)))),
+        "post_limit": default_post_limit,
         "tiktok": tiktok,
         "threads": threads,
         "x": x,
@@ -319,13 +328,17 @@ def wait_for_trigger(seconds, marker=None):
     for _ in range(seconds):
         current = TRIGGER_PATH.stat().st_mtime_ns if TRIGGER_PATH.exists() else 0
         if current != marker:
-            return
+            return True
         time.sleep(1)
+    return False
 
 
 def main():
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     seen = read_json(DATA_DIR / "seen.json", {})
+    due_at = {}
+    cleanup_due = {}
+    force = True
     with sync_playwright() as playwright:
         while True:
             trigger = TRIGGER_PATH.stat().st_mtime_ns if TRIGGER_PATH.exists() else 0
@@ -335,21 +348,27 @@ def main():
                 write_json(STATUS_PATH, {"state": "error", "checked_at": now(), "error": str(error)})
                 if "--once" in sys.argv:
                     break
-                wait_for_trigger(30, trigger)
-                continue
-            if not config["targets"] and not config["tiktok"]["targets"] and not config["threads"]["targets"] and not config["x"]["targets"] and not config["douyin"]["targets"]:
-                write_json(STATUS_PATH, {
-                    "state": "not_configured",
-                    "checked_at": now(),
-                    "error": "请先配置有效的目标用户名",
-                })
-                wait_for_trigger(30, trigger)
+                force = wait_for_trigger(30, trigger)
                 continue
             previous = read_json(STATUS_PATH, {})
             statuses = previous.get("platforms", {"instagram": previous})
-            for platform, selected in (("instagram", config), ("tiktok", config["tiktok"]), ("threads", config["threads"]), ("x", config["x"]), ("douyin", config["douyin"])):
+            entries = (("instagram", config), ("tiktok", config["tiktok"]), ("threads", config["threads"]), ("x", config["x"]), ("douyin", config["douyin"]))
+            current_time = time.monotonic()
+            for platform, selected in entries:
+                if selected["cleanup_days"] and (force or current_time >= cleanup_due.get(platform, 0)):
+                    cleanup_platform_media(DATA_DIR, platform, selected["cleanup_days"])
+                    cleanup_due[platform] = current_time + 86_400
+                elif not selected["cleanup_days"]:
+                    cleanup_due.pop(platform, None)
+                if not selected["enabled"]:
+                    statuses[platform] = {"state": "disabled"}
+                    due_at.pop(platform, None)
+                    continue
                 if not selected["targets"]:
                     statuses[platform] = {"state": "not_configured"}
+                    due_at.pop(platform, None)
+                    continue
+                if not force and current_time < due_at.get(platform, 0):
                     continue
                 statuses[platform] = {"state": "running", "started_at": now(), "targets": []}
                 write_json(STATUS_PATH, {"state": "running", "active_platform": platform, "started_at": now(), "platforms": statuses})
@@ -360,22 +379,24 @@ def main():
                             RESET_PATH.unlink()
                         statuses[platform] = run_cycle(playwright, config, seen)
                     elif platform == "tiktok":
-                        statuses[platform] = run_tiktok_cycle(playwright, selected, DATA_DIR / "tiktok", config["post_limit"])
+                        statuses[platform] = run_tiktok_cycle(playwright, selected, DATA_DIR / "tiktok", selected["post_limit"])
                     elif platform == "threads":
-                        statuses[platform] = run_threads_cycle(playwright, selected, DATA_DIR / "threads", config["post_limit"])
+                        statuses[platform] = run_threads_cycle(playwright, selected, DATA_DIR / "threads", selected["post_limit"])
                     elif platform == "x":
-                        statuses[platform] = run_x_cycle(playwright, selected, DATA_DIR / "x", config["post_limit"])
+                        statuses[platform] = run_x_cycle(playwright, selected, DATA_DIR / "x", selected["post_limit"])
                     else:
-                        statuses[platform] = run_douyin_cycle(playwright, selected, DATA_DIR / "douyin", config["post_limit"])
+                        statuses[platform] = run_douyin_cycle(playwright, selected, DATA_DIR / "douyin", selected["post_limit"])
                 except Exception as error:
                     statuses[platform] = {"state": "error", "checked_at": now(), "error": str(error), "error_code": getattr(error, "code", "collection_failed")}
                     print(f"{platform}: {error}", flush=True)
-            configured = [value for value in statuses.values() if value.get("state") != "not_configured"]
-            state = "error" if any(value.get("state") == "error" for value in configured) else "ready"
+                due_at[platform] = time.monotonic() + selected["interval"]
+            configured = [statuses[platform] for platform, selected in entries if selected["enabled"] and selected["targets"]]
+            state = "disabled" if not configured and all(not selected["enabled"] for _, selected in entries) else "not_configured" if not configured else "error" if any(value.get("state") == "error" for value in configured) else "ready"
             write_json(STATUS_PATH, {"state": state, "checked_at": now(), "platforms": statuses, "targets": [target for value in configured for target in value.get("targets", [])]})
             if "--once" in sys.argv:
                 break
-            wait_for_trigger(config["interval"], trigger)
+            waits = [due_at[platform] - time.monotonic() for platform, selected in entries if selected["enabled"] and selected["targets"]]
+            force = wait_for_trigger(max(1, int(min(waits))) if waits else 30, trigger)
 
 
 if __name__ == "__main__":

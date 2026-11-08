@@ -15,14 +15,14 @@ const requests = [];
 let revision = 0;
 let includePlatforms = false;
 const fixture = () => ({
-  config: { targets: ['demo'], username: 'demo', has_password: true, interval: 300, post_limit: 12, ...(includePlatforms ? {
-    tiktok: { targets: ['demo'], username: 'demo', has_password: true, login_method: 'password' },
-    threads: { targets: ['demo'], username: '', has_password: false, login_method: 'password' },
-    x: { targets: ['demo'], username: '', has_password: false, has_cookie: true, login_method: 'cookie' },
-    douyin: { targets: ['MS4wLjAB_Test-ID'], username: '', has_password: false, has_cookie: true, login_method: 'password' },
+  config: { targets: ['demo'], username: 'demo', has_password: true, enabled: true, interval: 300, post_limit: 12, cleanup_days: 0, ...(includePlatforms ? {
+    tiktok: { targets: ['demo'], username: 'demo', has_password: true, login_method: 'password', enabled: true, interval: 60, post_limit: 6, cleanup_days: 7 },
+    threads: { targets: ['demo'], username: '', has_password: false, login_method: 'password', enabled: true, interval: 900, post_limit: 24, cleanup_days: 30 },
+    x: { targets: ['demo'], username: '', has_password: false, has_cookie: true, login_method: 'cookie', enabled: false, interval: 3600, post_limit: 6, cleanup_days: 0 },
+    douyin: { targets: ['MS4wLjAB_Test-ID'], username: '', has_password: false, has_cookie: true, login_method: 'password', enabled: true, interval: 300, post_limit: 12, cleanup_days: 14 },
   } : {}) },
   status: { state: 'ready', checked_at: '2026-11-08T10:00:00Z', ...(includePlatforms ? { platforms: {
-    instagram: { state: 'ready' }, tiktok: { state: 'error', error_code: 'verification_required' }, threads: { state: 'ready' }, x: { state: 'ready' }, douyin: { state: 'ready' },
+    instagram: { state: 'ready' }, tiktok: { state: 'error', error_code: 'verification_required' }, threads: { state: 'ready' }, x: { state: 'disabled' }, douyin: { state: 'ready' },
   }} : {}) },
   library: [{ name: 'demo', status: { checked_at: `revision-${revision}` }, latest: '/files/photo/3.svg',
     items: Array.from({ length: 14 }, (_, i) => ({
@@ -352,6 +352,10 @@ try {
   assert.equal(await panel.locator('.photo-carousel-card[data-kind="image"]').count(), 2, 'all 14 images split into groups, none lost');
   assert.equal(await panel.locator('.photo-carousel-card[data-kind="screenshot"]').count(), 2);
   assert.equal(await panel.locator('.media-card[data-kind="video"] video').count(), 1);
+  assert(await panel.locator('.media-kind-group[data-media-group="image"]').first().evaluate(node => node.open));
+  for (const kind of ['video', 'screenshot']) assert.equal(await panel.locator(`.media-kind-group[data-media-group="${kind}"]`).first().evaluate(node => node.open), false);
+  assert.equal((await panel.locator('.sidebar .wordmark').innerText()).replace(/\s+/g, ' ').trim(), 'IG Luv');
+  assert.equal(await panel.locator('.sidebar .wordmark-mark svg').count(), 1);
   const card = panel.locator('.photo-carousel-card').first();
   await card.locator('.ib-scene[data-ready="true"]').waitFor();
   await clickSide(card.locator('.ib-photo'), 'right');
@@ -362,11 +366,14 @@ try {
     window.panelCanvas = document.querySelector('.photo-carousel-card [data-motion-surface]').shadowRoot.querySelector('canvas');
     window.panelVideo = document.querySelector('video');
   });
+  await panel.locator('.media-kind-group[data-media-group="video"] > summary').click();
+  assert(await panel.locator('.media-kind-group[data-media-group="video"]').evaluate(node => node.open));
   revision++;
   await panel.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
   await panel.waitForTimeout(250);
   assert(await panel.evaluate(() => window.panelCanvas === document.querySelector('.photo-carousel-card [data-motion-surface]').shadowRoot.querySelector('canvas')));
   assert(await panel.evaluate(() => window.panelVideo === document.querySelector('video')));
+  assert(await panel.locator('.media-kind-group[data-media-group="video"]').evaluate(node => node.open));
   assert.equal(await card.locator('.photo-count').innerText(), '2 / 12');
 
   // Original files open in this page, with focus, history and scroll restoration.
@@ -416,6 +423,10 @@ try {
       const mobileTheme = panel.locator('.mobile-header .theme-toggle .pixel-switch');
       const toggleBox = await mobileTheme.boundingBox();
       assert(toggleBox.width >= 90 && toggleBox.height >= 48, JSON.stringify(toggleBox));
+      const refresh = panel.locator('#mobile-run');
+      const refreshBox = await refresh.boundingBox();
+      assert(refreshBox.width >= 48 && refreshBox.height >= 48, JSON.stringify(refreshBox));
+      assert.notEqual(await refresh.evaluate(node => getComputedStyle(node).backgroundColor), 'rgba(0, 0, 0, 0)');
     }
     await panel.screenshot({ path: `${artifacts}/panel-${width}.png` });
   }
@@ -423,6 +434,11 @@ try {
   assert.equal(await panel.locator('.media-card[data-kind="video"]:visible').count(), 1);
   await panel.getByRole('button', { name: '截图', exact: true }).click();
   assert.equal(await panel.locator('.photo-carousel-card[data-kind="screenshot"]:visible').count(), 2);
+  const latestCard = panel.locator('.photo-carousel-card[data-kind="screenshot"]:visible').first();
+  await latestCard.locator('.ib-scene[data-ready="true"]').waitFor();
+  assert.equal(await latestCard.locator('.delete-button').getAttribute('data-latest'), '1');
+  await latestCard.locator('.delete-button').click();
+  assert(requests.some(([method, path]) => method === 'DELETE' && path === '/api/targets/demo/latest'));
 
   // Both platforms share the viewer, but keep same-name targets and actions separate.
   includePlatforms = true;
@@ -449,6 +465,7 @@ try {
   assert.equal(await panel.locator('#page-title').innerText(), 'Threads');
   assert.equal(await panel.locator('.target-block[data-platform="instagram"]:visible').count(), 0);
   assert.equal(await th.locator('.target-actions a').getAttribute('href'), 'https://www.threads.com/@demo');
+  assert.equal(await th.locator('.media-kind-group[data-media-group="text"]').evaluate(node => node.open), false);
   await panel.getByRole('button', { name: '文字', exact: true }).click();
   const textCard = th.locator('.text-card');
   await textCard.waitFor();
@@ -497,6 +514,10 @@ try {
   assert.equal(await panel.locator('.settings-group[open]').count(), 0);
   await panel.locator('#platform-settings summary').click();
   await panel.locator('#settings-platform').selectOption('tiktok');
+  assert(await panel.locator('#platform-enabled').isChecked());
+  assert.equal(await panel.locator('#interval').inputValue(), '60');
+  assert.equal(await panel.locator('#post-limit').inputValue(), '6');
+  assert.equal(await panel.locator('#cleanup-days').inputValue(), '7');
   assert(await panel.getByText('TikTok 账号', { exact: true }).isVisible());
   assert(await panel.getByText('输入 TikTok 验证码', { exact: true }).isVisible());
   await panel.locator('#verification-code').fill('123456');
@@ -510,7 +531,7 @@ try {
   await panel.locator('#ig-targets').fill('demo');
   await panel.locator('#tiktok-cookie').fill('sessionid=fixture-session');
   await panel.getByRole('button', { name: '保存并连接', exact: true }).click();
-  assert(requests.some(([method, path, body]) => method === 'POST' && path === '/api/config' && body.platform === 'tiktok' && body.login_method === 'cookie' && body.cookie === 'sessionid=fixture-session'));
+  assert(requests.some(([method, path, body]) => method === 'POST' && path === '/api/config' && body.platform === 'tiktok' && body.login_method === 'cookie' && body.cookie === 'sessionid=fixture-session' && body.interval === 60 && body.post_limit === 6 && body.cleanup_days === 7));
   await panel.waitForFunction(() => document.querySelector('#tiktok-cookie').value === '');
   await panel.locator('#reset-session').click();
   assert(requests.some(([method, path, , search]) => method === 'POST' && path === '/api/reset-session' && search === '?platform=tiktok'));
@@ -533,6 +554,7 @@ try {
   await panel.locator('#reset-session').click();
   assert(requests.some(([method, path, , search]) => method === 'POST' && path === '/api/reset-session' && search === '?platform=threads'));
   await panel.locator('#settings-platform').selectOption('x');
+  assert.equal(await panel.locator('#platform-enabled').isChecked(), false);
   assert.equal(await panel.locator('#login-method-label').innerText(), 'X 登录方式');
   await panel.locator('#login-method').selectOption('cookie');
   assert.equal(await panel.locator('#cookie-label').innerText(), 'X Cookie');
@@ -553,6 +575,7 @@ try {
   await panel.getByRole('button', { name: '保存并连接', exact: true }).click();
   assert(requests.some(([method, path, body]) => method === 'POST' && path === '/api/config' && body.platform === 'douyin' && body.login_method === 'qrcode'));
   await panel.waitForFunction(() => !document.querySelector('#settings-form [type="submit"]').disabled);
+  await panel.waitForTimeout(1100);
   await panel.locator('#login-method').selectOption('cookie');
   assert.equal(await panel.locator('#cookie-label').innerText(), '抖音 Cookie');
   await panel.locator('#tiktok-cookie').fill('sessionid=douyin-fixture; ttwid=device');
@@ -560,6 +583,8 @@ try {
   assert(requests.some(([method, path, body]) => method === 'POST' && path === '/api/config' && body.platform === 'douyin' && body.login_method === 'cookie' && body.cookie === 'sessionid=douyin-fixture; ttwid=device'));
   await panel.locator('#reset-session').click();
   assert(requests.some(([method, path, , search]) => method === 'POST' && path === '/api/reset-session' && search === '?platform=douyin'));
+  await panel.locator('#cleanup-platform').click();
+  assert(requests.some(([method, path, , search]) => method === 'DELETE' && path === '/api/cleanup' && search === '?platform=douyin'));
   await panel.locator('#settings-platform').selectOption('instagram');
   assert.equal(await panel.locator('#ig-username').inputValue(), 'demo');
   assert(await panel.locator('#cookie-field').isHidden());
@@ -624,8 +649,9 @@ try {
   assert(await mobilePreview.locator('#settings-platform').isHidden());
   await mobilePreview.setViewportSize({ width: 320, height: 844 });
   assert(await mobilePreview.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
-  assert.equal(await mobilePreview.locator('.bottom-nav a').count(), 6);
-  for (const link of await mobilePreview.locator('.bottom-nav a').all()) {
+  assert.equal(await mobilePreview.locator('.bottom-nav a:visible').count(), 5);
+  assert(await mobilePreview.locator('.bottom-nav a[href="/x"]').isHidden());
+  for (const link of await mobilePreview.locator('.bottom-nav a:visible').all()) {
     const box = await link.boundingBox();
     assert(box.width >= 48 && box.height >= 48, JSON.stringify(box));
   }

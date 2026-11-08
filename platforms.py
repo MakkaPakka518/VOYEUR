@@ -1,5 +1,6 @@
 import json
 import re
+import time
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -60,6 +61,34 @@ def write_json(path, value):
     temporary.write_text(json.dumps(value, ensure_ascii=False, indent=2), encoding="utf-8")
     temporary.chmod(0o600)
     temporary.replace(path)
+
+
+def cleanup_platform_media(data_dir, platform, older_than_days=None):
+    root = platform_dir(data_dir, platform)
+    cutoff = None if older_than_days is None else time.time() - older_than_days * 86_400
+    removed = {"screenshots": 0, "videos": 0}
+    targets = root / "targets"
+    if not targets.exists():
+        return removed
+
+    def remove(path, kind):
+        try:
+            if path.is_file() and (cutoff is None or path.stat().st_mtime < cutoff):
+                path.unlink()
+                removed[kind] += 1
+        except FileNotFoundError:
+            pass
+
+    for target in (path for path in targets.iterdir() if path.is_dir()):
+        remove(target / "latest.png", "screenshots")
+        items = target / "items"
+        if not items.exists():
+            continue
+        for item in (path for path in items.iterdir() if path.is_dir()):
+            remove(item / "page.png", "screenshots")
+            for video in item.glob("*.mp4"):
+                remove(video, "videos")
+    return removed
 
 
 def parse_cookie(value, domain=".tiktok.com", label="TikTok"):
