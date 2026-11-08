@@ -82,6 +82,7 @@ def logout():
 @app.get("/instagram")
 @app.get("/tiktok")
 @app.get("/threads")
+@app.get("/x")
 @app.get("/settings")
 def index():
     return FileResponse(ROOT / "static" / "index.html")
@@ -136,6 +137,7 @@ def state(library_data: bool = True):
     config = read_json(CONFIG_PATH, {})
     tiktok = config.get("tiktok", {})
     threads = config.get("threads", {})
+    x = config.get("x", {})
     return {
         "config": {
             "targets": config.get("targets", []),
@@ -145,11 +147,13 @@ def state(library_data: bool = True):
             "post_limit": config.get("post_limit", 12),
             "tiktok": {"targets": tiktok.get("targets", []), "username": tiktok.get("username", ""), "has_password": bool(tiktok.get("password")), "has_cookie": bool(tiktok.get("cookie")), "login_method": tiktok.get("login_method", "password")},
             "threads": {"targets": threads.get("targets", []), "username": threads.get("username", ""), "has_password": bool(threads.get("password")), "has_cookie": bool(threads.get("cookie")), "login_method": threads.get("login_method", "password")},
+            "x": {"targets": x.get("targets", []), "username": x.get("username", ""), "has_password": bool(x.get("password")), "has_cookie": bool(x.get("cookie")), "login_method": x.get("login_method", "password")},
         },
         "status": read_json(STATUS_PATH, {"state": "not_configured"}),
         "login_screenshot": file_url(DATA_DIR / "login-required.png") if (DATA_DIR / "login-required.png").exists() else None,
         "tiktok_login_screenshot": file_url(DATA_DIR / "tiktok" / "login-required.png") if (DATA_DIR / "tiktok" / "login-required.png").exists() else None,
         "threads_login_screenshot": file_url(DATA_DIR / "threads" / "login-required.png") if (DATA_DIR / "threads" / "login-required.png").exists() else None,
+        "x_login_screenshot": file_url(DATA_DIR / "x" / "login-required.png") if (DATA_DIR / "x" / "login-required.png").exists() else None,
         "library": library() if library_data else None,
     }
 
@@ -174,21 +178,26 @@ async def save_config(request: Request):
         raise HTTPException(400, "请输入有效的用户名、检查间隔和条数") from error
     if not targets:
         raise HTTPException(400, "请填写关注用户")
+    if platform == "x" and any(not re.fullmatch(r"[a-z0-9_]{1,15}", target) for target in targets):
+        raise HTTPException(400, "X 用户名只能包含字母、数字和下划线，最多 15 个字符")
     selected = {"targets": targets, "username": username, "password": password}
     if platform == "instagram" and (not username or not password):
         raise HTTPException(400, "请填写 Instagram 账号和密码")
-    if platform in {"tiktok", "threads"}:
+    if platform in {"tiktok", "threads", "x"}:
+        label = {"tiktok": "TikTok", "threads": "Threads", "x": "X"}[platform]
         method = payload.get("login_method", saved.get("login_method", "password"))
         if method not in {"password", "cookie"}:
             raise HTTPException(400, "请选择账号密码或 Cookie 登录")
         cookie = str(payload.get("cookie", "")) or str(saved.get("cookie", ""))
         if method == "cookie":
             try:
-                parse_cookie(cookie, f".{platform}.com", "TikTok" if platform == "tiktok" else "Threads")
+                parse_cookie(cookie, f".{platform}.com", label)
             except ValueError as error:
                 raise HTTPException(400, str(error)) from error
         elif bool(username) != bool(password):
-            raise HTTPException(400, f"请同时填写{'TikTok' if platform == 'tiktok' else 'Threads'}账号和密码，或都留空采集公开账号")
+            raise HTTPException(400, f"请同时填写{label}账号和密码，或都留空采集公开账号")
+        elif platform == "x" and username and not re.fullmatch(r"[A-Za-z0-9_]{1,15}", username):
+            raise HTTPException(400, "X 密码登录请填写 X 用户名，不要填写邮箱")
         selected.update({"login_method": method, "cookie": cookie})
     config = dict(existing)
     if platform == "instagram":
@@ -201,7 +210,7 @@ async def save_config(request: Request):
     root.mkdir(parents=True, exist_ok=True)
     (root / "login-paused.json").unlink(missing_ok=True)
     changed = saved.get("username") and saved.get("username") != username
-    if platform in {"tiktok", "threads"}:
+    if platform in {"tiktok", "threads", "x"}:
         changed = changed or saved.get("login_method") != selected["login_method"] or saved.get("cookie", "") != selected["cookie"]
     if changed:
         (root / "reset-session.trigger").write_text(datetime.now(timezone.utc).isoformat(), encoding="utf-8")

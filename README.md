@@ -1,6 +1,6 @@
 # ig luv
 
-Private web panel and Playwright collector for Instagram, TikTok and Threads profiles visible to your account. It keeps persistent browser sessions, overwrites each target's latest profile screenshot, archives newly observed posts, and downloads their text, images and videos.
+Private web panel and Playwright collector for Instagram, TikTok, Threads and X profiles visible to your account. It keeps persistent browser sessions, overwrites each target's latest profile screenshot, archives newly observed posts, and downloads their text, images and videos.
 
 ## Features
 
@@ -8,6 +8,7 @@ Private web panel and Playwright collector for Instagram, TikTok and Threads pro
 - Instagram login with password-error and verification-code handling in the panel.
 - TikTok account/password login, verification feedback, and Cookie import as a fallback.
 - Threads public collection plus account/password and Cookie login fallbacks.
+- X public collection plus account/password and Cookie login fallbacks.
 - Platform-specific configuration, sessions, archives, status and deletion.
 - Configurable targets, polling interval, and how many recent posts to check.
 - Per-post screenshots plus original images and MP4 videos.
@@ -48,7 +49,7 @@ Private profiles require a valid session with access to them. Expired Cookies an
 reported as failures, and incomplete downloads are retried instead of being marked as archived.
 
 All platforms use the same polling interval and per-user post limit. Their browser sessions are opened
-sequentially to fit the VPS memory limit. Library pages separate Instagram, TikTok, Threads and the combined view.
+sequentially to fit the VPS memory limit. Library pages separate Instagram, TikTok, Threads, X and the combined view.
 
 ## Threads
 
@@ -60,6 +61,18 @@ Posts with photos or video use the existing carousel and native player. Pure tex
 the collector stores their full text in `metadata.json` and `content.txt`, keeps a page screenshot, and
 shows them as downloadable cards under the **Text** media filter.
 
+## X
+
+Choose **X** in settings and enter target handles without `@`. Public profiles can be tried without
+credentials, but X often limits signed-out or datacenter traffic. For reliable collection, sign in to
+`x.com` in your browser, copy the complete `Cookie` request-header value from an X network request,
+and use **Cookie** login. The Cookie should normally include `auth_token` and `ct0`.
+
+X uses its own browser profile and archive under `data/x/`. Posts with multiple photos, MP4 video or
+animated GIFs use the existing gallery and player. Text-only posts are stored in `content.txt` and shown
+under the **Text** filter. Legacy `twitter.com/<handle>/status/<id>` links are recognized and normalized
+to `x.com`.
+
 ## Data
 
 Everything is stored under `data/`:
@@ -70,17 +83,18 @@ Everything is stored under `data/`:
 - `data/targets/<username>/`: profile screenshot, per-target status, and archived items.
 - `data/tiktok/`: TikTok browser profile, seen-post IDs, verification, screenshots and `targets/` archives.
 - `data/threads/`: Threads browser profile, seen-post IDs, verification, screenshots and `targets/` archives.
-- `data/config.json` retains the original Instagram fields and adds separate `tiktok` and `threads` objects.
+- `data/x/`: X browser profile, seen-post IDs, screenshots and `targets/` archives.
+- `data/config.json` retains the original Instagram fields and adds separate `tiktok`, `threads` and `x` objects.
 
 `data/` is ignored by git. Back it up if you want to keep the session and archive.
 
 ## Image viewer
 
 The panel has separate, directly loadable pages: `/` for all platforms, `/instagram`, `/tiktok`,
-`/threads`, and `/settings`. Desktop navigation and the five-tab mobile bar use the same routes.
+`/threads`, `/x`, and `/settings`. Desktop navigation and the six-tab mobile bar use the same routes.
 The settings page groups platform/login, target users, and collection frequency into native
 expandable sections, initially collapsed. Settings no longer appear below media.
-Instagram, TikTok and Threads icons are included locally from Simple Icons (CC0-1.0).
+Instagram, TikTok, Threads and X icons are included locally from Simple Icons (CC0-1.0).
 
 The header includes a compact [LeiBox Pixel Day–Night Toggle](https://leibox.pantoria.cn/docs/animations/pixel-toggle)
 beside the refresh action. It keeps the original Canvas2D particles, drag/touch and keyboard behavior,

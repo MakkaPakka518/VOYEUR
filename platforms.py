@@ -3,7 +3,7 @@ import re
 from pathlib import Path
 
 
-PLATFORMS = ("instagram", "tiktok", "threads")
+PLATFORMS = ("instagram", "tiktok", "threads", "x")
 USERNAME_RE = re.compile(r"^[a-z0-9._]+$")
 
 

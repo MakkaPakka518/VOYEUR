@@ -18,9 +18,10 @@ const fixture = () => ({
   config: { targets: ['demo'], username: 'demo', has_password: true, interval: 300, post_limit: 12, ...(includePlatforms ? {
     tiktok: { targets: ['demo'], username: 'demo', has_password: true, login_method: 'password' },
     threads: { targets: ['demo'], username: '', has_password: false, login_method: 'password' },
+    x: { targets: ['demo'], username: '', has_password: false, has_cookie: true, login_method: 'cookie' },
   } : {}) },
   status: { state: 'ready', checked_at: '2026-11-08T10:00:00Z', ...(includePlatforms ? { platforms: {
-    instagram: { state: 'ready' }, tiktok: { state: 'error', error_code: 'verification_required' }, threads: { state: 'ready' },
+    instagram: { state: 'ready' }, tiktok: { state: 'error', error_code: 'verification_required' }, threads: { state: 'ready' }, x: { state: 'ready' },
   }} : {}) },
   library: [{ name: 'demo', status: { checked_at: `revision-${revision}` }, latest: '/files/photo/3.svg',
     items: Array.from({ length: 14 }, (_, i) => ({
@@ -40,6 +41,9 @@ const fixture = () => ({
   }, {
     id: 'th-photo', caption: 'Threads 圖片貼文', captured_at: '2026-11-08T09:00:00Z', source_url: 'https://www.threads.com/@demo/post/photo',
     files: [{ name: 'media-01.jpg', kind: 'image', url: '/files/photo/0.svg' }, { name: 'page.png', kind: 'image', url: '/files/photo/1.svg' }],
+  }] }, { name: 'demo', key: 'x:demo', platform: 'x', status: {}, latest: '/files/photo/0.svg', items: [{
+    id: 'x-text', caption: '这是一条 X 纯文字贴文。', captured_at: '2026-11-08T08:00:00Z', source_url: 'https://x.com/demo/status/123',
+    files: [{ name: 'page.png', kind: 'image', url: '/files/photo/0.svg' }, { name: 'content.txt', kind: 'text', url: '/files/text/content.txt' }],
   }] }] : [])],
 });
 const server = createServer(async (req, res) => {
@@ -74,7 +78,7 @@ const server = createServer(async (req, res) => {
     return;
   }
   try {
-    const path = url.pathname === '/login' ? '/static/login.html' : ['/', '/instagram', '/tiktok', '/threads', '/settings'].includes(url.pathname) ? '/static/index.html' : url.pathname;
+    const path = url.pathname === '/login' ? '/static/login.html' : ['/', '/instagram', '/tiktok', '/threads', '/x', '/settings'].includes(url.pathname) ? '/static/index.html' : url.pathname;
     if (!path.startsWith('/static/') || path.includes('..')) throw new Error('Not found');
     res.setHeader('Content-Type', ({ '.js': 'text/javascript', '.css': 'text/css', '.html': 'text/html', '.svg': 'image/svg+xml' })[extname(path)] || 'application/octet-stream');
     res.end(await readFile(join(root, path)));
@@ -455,11 +459,23 @@ try {
   await textCard.locator('.delete-button').click();
   await panel.waitForTimeout(100);
   assert(requests.some(([method, path, , search]) => method === 'DELETE' && path === '/api/targets/demo/items/th-text' && search === '?platform=threads'));
+  const xTarget = panel.locator('.target-block[data-platform="x"]');
+  await navigate(panel, '/x');
+  await xTarget.waitFor();
+  assert.equal(await panel.locator('#page-title').innerText(), 'X');
+  assert.equal(await xTarget.locator('.target-actions a').getAttribute('href'), 'https://x.com/demo');
+  await panel.getByRole('button', { name: '文字', exact: true }).click();
+  assert.match(await xTarget.locator('.text-content').innerText(), /X 纯文字贴文/);
+  for (const width of [375, 1440]) {
+    await panel.setViewportSize({ width, height: 1000 });
+    assert(await panel.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
+    await panel.screenshot({ path: `${artifacts}/x-text-${width}.png` });
+  }
   await navigate(panel, '/instagram');
   assert.equal(await tk.isVisible(), false);
   assert.equal(await panel.locator('.target-block[data-platform="instagram"]:visible').count(), 1);
   await navigate(panel, '/');
-  assert.equal(await panel.locator('.target-block:visible').count(), 3);
+  assert.equal(await panel.locator('.target-block:visible').count(), 4);
   await navigate(panel, '/settings');
   assert(await panel.locator('#library').isHidden());
   assert.equal(await panel.locator('.settings-group[open]').count(), 0);
@@ -500,6 +516,15 @@ try {
   assert(requests.some(([method, path, body]) => method === 'POST' && path === '/api/config' && body.platform === 'threads' && body.login_method === 'cookie' && body.cookie === 'sessionid=threads-fixture'));
   await panel.locator('#reset-session').click();
   assert(requests.some(([method, path, , search]) => method === 'POST' && path === '/api/reset-session' && search === '?platform=threads'));
+  await panel.locator('#settings-platform').selectOption('x');
+  assert.equal(await panel.locator('#login-method-label').innerText(), 'X 登录方式');
+  await panel.locator('#login-method').selectOption('cookie');
+  assert.equal(await panel.locator('#cookie-label').innerText(), 'X Cookie');
+  await panel.locator('#tiktok-cookie').fill('auth_token=x-fixture; ct0=csrf');
+  await panel.getByRole('button', { name: '保存并连接', exact: true }).click();
+  assert(requests.some(([method, path, body]) => method === 'POST' && path === '/api/config' && body.platform === 'x' && body.login_method === 'cookie' && body.cookie === 'auth_token=x-fixture; ct0=csrf'));
+  await panel.locator('#reset-session').click();
+  assert(requests.some(([method, path, , search]) => method === 'POST' && path === '/api/reset-session' && search === '?platform=x'));
   await panel.locator('#settings-platform').selectOption('instagram');
   assert.equal(await panel.locator('#ig-username').inputValue(), 'demo');
   assert(await panel.locator('#cookie-field').isHidden());
@@ -562,7 +587,13 @@ try {
   assert(await mobilePreview.locator('#settings-platform').isVisible());
   await mobilePreview.locator('#platform-settings summary').tap();
   assert(await mobilePreview.locator('#settings-platform').isHidden());
-  assert.equal(await mobilePreview.locator('.bottom-nav a').count(), 5);
+  await mobilePreview.setViewportSize({ width: 320, height: 844 });
+  assert(await mobilePreview.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
+  assert.equal(await mobilePreview.locator('.bottom-nav a').count(), 6);
+  for (const link of await mobilePreview.locator('.bottom-nav a').all()) {
+    const box = await link.boundingBox();
+    assert(box.width >= 48 && box.height >= 48, JSON.stringify(box));
+  }
   await mobilePreview.close();
   const loginPage = await open();
   await loginPage.goto(base);

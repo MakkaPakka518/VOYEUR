@@ -31,7 +31,7 @@ let lastState;
 let librarySignature = '';
 let selectedPlatform = 'instagram';
 let activePlatform = 'all';
-const platformNames = { instagram: 'Instagram', tiktok: 'TikTok', threads: 'Threads' };
+const platformNames = { instagram: 'Instagram', tiktok: 'TikTok', threads: 'Threads', x: 'X' };
 const preview = createMediaPreview(document.querySelector('#media-preview'));
 const themeToggle = createThemeToggle([...document.querySelectorAll('.theme-toggle')]);
 const pages = {
@@ -39,6 +39,7 @@ const pages = {
   '/instagram': { title: 'Instagram', platform: 'instagram' },
   '/tiktok': { title: 'TikTok', platform: 'tiktok' },
   '/threads': { title: 'Threads', platform: 'threads' },
+  '/x': { title: 'X', platform: 'x' },
   '/settings': { title: '设置', platform: 'all' },
 };
 let currentPage = '';
@@ -90,7 +91,8 @@ function renderStatus(globalStatus = {}) {
     login_page_changed: ['登录页面已变化', `查看登录截图确认 ${brand} 当前页面`],
     tiktok_blocked: ['TikTok 需要处理', status.error || '请完成登录或更新 Cookie'],
     threads_blocked: ['Threads 需要处理', status.error || '请完成登录或更新 Cookie'],
-    rate_limited: ['TikTok 登录过于频繁', '已暂停密码重试，请改用 Cookie 或更新登录设置后再试'],
+    x_blocked: ['X 需要处理', status.error || '请完成登录或更新 Cookie'],
+    rate_limited: [`${brand} 请求过于频繁`, status.error || '请稍后重试或更新 Cookie'],
   };
   const labels = {
     not_configured: ['等待配置', `填写 ${brand} 关注用户后开始采集`],
@@ -104,12 +106,12 @@ function renderStatus(globalStatus = {}) {
   elements.statusDetail.textContent = detail;
   elements.statusTime.textContent = formatDate(status.checked_at || status.started_at);
   elements.railState.textContent = title;
-  const screenshot = statusPlatform === 'tiktok' ? lastState?.tiktok_login_screenshot : statusPlatform === 'threads' ? lastState?.threads_login_screenshot : lastState?.login_screenshot;
+  const screenshot = statusPlatform === 'instagram' ? lastState?.login_screenshot : lastState?.[`${statusPlatform}_login_screenshot`];
   elements.statusAction.hidden = !screenshot;
   elements.statusAction.href = screenshot || '#';
   document.querySelector('#verification-title').textContent = `输入 ${platformNames[selectedPlatform]} 验证码`;
   elements.verificationPanel.hidden = !['verification_required', 'invalid_verification'].includes(settingStatus.error_code)
-    || (selectedPlatform === 'tiktok' && elements.loginMethod.value === 'cookie');
+    || (selectedPlatform !== 'instagram' && elements.loginMethod.value === 'cookie');
 }
 
 function previewFor(item) {
@@ -165,14 +167,14 @@ function renderLibrary(library) {
   const hasContent = library.some(target => target.latest || target.items.length);
   if (!hasContent) {
     elements.library.innerHTML = `
-      <div class="empty-state"><div><h3>还没有收藏</h3><p>配置 Instagram、TikTok 或 Threads 关注用户，首次检查后内容会出现在这里。</p><a href="/settings" data-route>前往采集设置</a></div></div>`;
+      <div class="empty-state"><div><h3>还没有收藏</h3><p>配置 Instagram、TikTok、Threads 或 X 关注用户，首次检查后内容会出现在这里。</p><a href="/settings" data-route>前往采集设置</a></div></div>`;
     syncImageGroups(elements.library);
     return;
   }
   const template = document.createElement('template');
   template.innerHTML = library.map(target => {
     const platform = target.platform || 'instagram', key = target.key || target.name;
-    const profileUrl = platform === 'tiktok' ? `https://www.tiktok.com/@${encodeURIComponent(target.name)}` : platform === 'threads' ? `https://www.threads.com/@${encodeURIComponent(target.name)}` : `https://www.instagram.com/${encodeURIComponent(target.name)}/`;
+    const profileUrl = platform === 'tiktok' ? `https://www.tiktok.com/@${encodeURIComponent(target.name)}` : platform === 'threads' ? `https://www.threads.com/@${encodeURIComponent(target.name)}` : platform === 'x' ? `https://x.com/${encodeURIComponent(target.name)}` : `https://www.instagram.com/${encodeURIComponent(target.name)}/`;
     const photos = imageGroupsMarkup(target);
     const cards = target.items.filter(item => item.files.some(file => file.kind === 'video')).map(item => mediaCard(target, item)).join('');
     const textCards = target.items.filter(item => item.files.some(file => file.kind === 'text') && !item.files.some(file => file.kind === 'video' || (file.kind === 'image' && file.name !== 'page.png'))).map(item => textCard(target, item)).join('');
@@ -261,7 +263,7 @@ function updateLoginFields() {
   elements.username.closest('label').hidden = cookie;
   elements.password.closest('label').hidden = cookie;
   elements.username.required = !external;
-  elements.username.placeholder = external ? '邮箱或用户名' : '手机号、邮箱或用户名';
+  elements.username.placeholder = selectedPlatform === 'x' ? 'X 用户名' : external ? '邮箱或用户名' : '手机号、邮箱或用户名';
   document.querySelector('#reset-session').textContent = `重置 ${platformNames[selectedPlatform]} 会话`;
   document.querySelector('#platform-summary').textContent = platformNames[selectedPlatform];
   renderStatus(lastState?.status || {});
