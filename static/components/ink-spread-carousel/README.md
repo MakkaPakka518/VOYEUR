@@ -24,6 +24,9 @@ Omit `images` for the embedded four-photo demonstration; there are no remote ass
 The panel accepts 1–12 photos per instance, showing a static card for a single photo.
 Custom photos are center-cropped without distortion; cross-origin sources require CORS.
 Image replacements are atomic, and a failure leaves the existing photos available.
+Click the left half for the previous photo or the right half for the next;
+the ink reveal starts at the exact press location. There are no overlaid arrow buttons.
+Left/Right, Home and End remain available; Enter or Space advances from the center.
 
 The panel's phone layout overrides `--motion-scene-width: 453.333` and
 `--motion-scene-height: 620`, removes outer margins, and renders a roughly

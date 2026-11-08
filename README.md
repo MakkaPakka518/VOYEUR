@@ -41,8 +41,9 @@ Everything is stored under `data/`:
 
 ## Image viewer
 
-Photos and screenshots are grouped in batches of up to 12. Click the photo or the arrows
-to reveal the next photo from the press location; Left/Right, Home and End also work.
+Photos and screenshots are grouped in batches of up to 12. Click the left half of a photo
+for the previous photo, or the right half for the next. The reveal starts at the press location.
+Left/Right, Home and End also work; Enter or Space advances to the next photo.
 The actions below each carousel apply to the current photo. Video items retain native playback controls.
 On phones, the viewer removes the surrounding scene whitespace so photos are nearly screen-width.
 
@@ -63,7 +64,7 @@ node test_carousel.mjs
 The test uses local synthetic photos and an API fixture; it does not access or modify VPS data.
 It checks reveal colors, rapid interruption, keyboard/touch, image failures, visibility pauses,
 reduced motion, WebGL context recovery, teardown, gallery actions and 375/768/1440 layouts.
-At 375px it also checks that photos are at least 350px wide and arrow buttons at least 48px wide.
+At 375px it also checks that photos are at least 350px wide, with large left/right touch regions.
 Set `ARTIFACT_DIR` to choose where screenshots are saved.
 
 ## Notes

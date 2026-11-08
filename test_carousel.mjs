@@ -99,17 +99,23 @@ async function pixel(page, x, y) {
   }, { x, y });
 }
 const near = (a, b) => a.slice(0, 3).every((value, i) => Math.abs(value - b[i]) < 8);
+async function clickSide(photo, side) {
+  const { width, height } = await photo.boundingBox();
+  await photo.click({ position: { x: width * (side === 'left' ? .2 : .8), y: height * .5 } });
+}
 
 try {
   const page = await open();
   await mount(page, { duration: 2400 });
   assert.equal(await page.locator('.ib-scene').getAttribute('data-renderer'), 'webgl');
   assert.equal(await page.locator('button button').count(), 0);
+  assert.equal(await page.locator('.ib-nav').count(), 0);
+  assert.equal(await page.locator('.ib-card button').count(), 1);
   const photo = page.locator('.ib-photo');
-  await photo.click({ position: { x: 40, y: 45 } });
+  await photo.click({ position: { x: 380, y: 45 } });
   await page.waitForFunction(() => Number(window.carousel.root.querySelector('.ib-scene').dataset.progress) > 0.22);
-  assert(near(await pixel(page, .1, .1), [35, 93, 200]), 'press origin should reveal new photo');
-  assert(near(await pixel(page, .9, .9), [210, 60, 65]), 'unrevealed corner must keep original colors');
+  assert(near(await pixel(page, .9, .1), [35, 93, 200]), 'press origin should reveal new photo');
+  assert(near(await pixel(page, .1, .9), [210, 60, 65]), 'unrevealed corner must keep original colors');
   await page.screenshot({ path: `${artifacts}/early.png` });
   await page.waitForFunction(() => Number(window.carousel.root.querySelector('.ib-scene').dataset.progress) > 0.55);
   await page.screenshot({ path: `${artifacts}/middle.png` });
@@ -124,16 +130,16 @@ try {
   const before = await pixel(page, .85, .85);
   await page.evaluate(() => {
     window.savedCanvas = window.carousel.root.querySelector('canvas');
-    window.carousel.root.querySelector('.ib-nav--next').click();
+    window.carousel.root.querySelector('.ib-photo').click();
   });
   const after = await pixel(page, .85, .85);
   assert(near(after, before), `interruption must not flash back: ${before} -> ${after}`);
-  await page.locator('.ib-nav--prev').click();
+  await clickSide(photo, 'left');
   await done(page, 2);
   assert.deepEqual(await page.evaluate(() => window.changes), [2]);
   assert(await page.evaluate(() => window.savedCanvas === window.carousel.root.querySelector('canvas')));
   const left = await page.locator('.ib-scene').getAttribute('data-origin');
-  await page.locator('.ib-nav--next').click();
+  await clickSide(photo, 'right');
   const right = await page.locator('.ib-scene').getAttribute('data-origin');
   assert.notEqual(left, right);
   await done(page, 3);
@@ -141,6 +147,11 @@ try {
   await photo.focus();
   await page.keyboard.press('Home');
   await done(page, 0);
+  await clickSide(photo, 'left');
+  await done(page, 3);
+  await clickSide(photo, 'right');
+  await done(page, 0);
+  await photo.focus();
   await page.keyboard.press('ArrowRight');
   assert.equal(await page.locator('.ib-scene').getAttribute('data-origin'), '0.8800,0.5000');
   await done(page, 1);
@@ -198,7 +209,7 @@ try {
     window.glExtension.loseContext();
   });
   await page.waitForFunction(() => window.carousel.root.querySelector('.ib-scene').dataset.renderer === 'image');
-  await page.locator('.ib-nav--next').click();
+  await clickSide(photo, 'right');
   await done(page, 0);
   await page.evaluate(() => window.glExtension.restoreContext());
   await page.waitForFunction(() => window.carousel.root.querySelector('.ib-scene').dataset.renderer === 'webgl');
@@ -225,13 +236,13 @@ try {
 
   for (const width of [375, 768, 1440]) {
     await page.setViewportSize({ width, height: 1000 });
-    await page.locator('.ib-nav--next').focus();
-    const measured = await page.locator('.ib-nav--next').evaluate(button => {
+    await photo.focus();
+    const measured = await photo.evaluate(button => {
       const rect = button.getBoundingClientRect();
       const computed = getComputedStyle(button);
-      return { target: rect.width * 72 / 64, outline: computed.outlineStyle, overflow: document.documentElement.scrollWidth > innerWidth };
+      return { target: rect.width / 2, outline: computed.outlineStyle, overflow: document.documentElement.scrollWidth > innerWidth };
     });
-    assert(measured.target >= 24 && measured.outline === 'solid' && !measured.overflow, JSON.stringify(measured));
+    assert(measured.target >= 48 && measured.outline === 'solid' && !measured.overflow, JSON.stringify(measured));
     await page.screenshot({ path: `${artifacts}/component-${width}.png` });
   }
   await page.close();
@@ -248,12 +259,12 @@ try {
   const box = await fallback.locator('.ib-photo').boundingBox();
   await fallback.touchscreen.tap(box.x + box.width * .1, box.y + box.height * .1);
   await fallback.waitForFunction(() => Number(window.carousel.root.querySelector('.ib-scene').dataset.progress) > .24);
-  assert(near(await pixel(fallback, .1, .1), [35, 93, 200]));
+  assert(near(await pixel(fallback, .1, .1), [154, 83, 187]));
   assert(near(await pixel(fallback, .9, .9), [210, 60, 65]));
   await fallback.screenshot({ path: `${artifacts}/fallback-touch.png` });
-  await fallback.locator('.ib-nav--next').tap();
+  await fallback.locator('.ib-photo').tap({ position: { x: box.width * .8, y: box.height * .5 } });
   await fallback.evaluate(() => window.carousel.update({ reducedMotion: true }));
-  await done(fallback, 2);
+  await done(fallback, 0);
   await fallback.close();
 
   const panel = await open();
@@ -264,7 +275,7 @@ try {
   assert.equal(await panel.locator('.media-card[data-kind="video"] video').count(), 1);
   const card = panel.locator('.photo-carousel-card').first();
   await card.locator('.ib-scene[data-ready="true"]').waitFor();
-  await card.locator('.ib-nav--next').click();
+  await clickSide(card.locator('.ib-photo'), 'right');
   await panel.waitForFunction(() => document.querySelector('[data-motion-surface]').shadowRoot.querySelector('.ib-scene').dataset.index === '1');
   assert.equal(await card.locator('.delete-button').getAttribute('data-item'), 'post-1');
   assert.match(await card.locator('.media-actions a').first().getAttribute('href'), /photo\/1/);
@@ -292,9 +303,9 @@ try {
     if (width === 375) {
       const photo = await card.locator('.ib-photo').boundingBox();
       assert(photo.width >= 350 && photo.height >= 460, `phone photo is too small: ${JSON.stringify(photo)}`);
-      const arrow = await card.locator('.ib-nav--next').boundingBox();
-      assert(arrow.width >= 48, 'mobile arrow must keep a usable touch target');
-      await card.locator('.ib-nav--next').click();
+      assert(photo.width / 2 >= 48, 'both mobile photo halves must be usable touch targets');
+      assert.equal(await card.locator('.ib-nav').count(), 0);
+      await clickSide(card.locator('.ib-photo'), 'right');
       await panel.waitForFunction(() => document.querySelector('[data-motion-surface]').shadowRoot.querySelector('.ib-scene').dataset.index === '2');
       assert.equal(await card.locator('.delete-button').getAttribute('data-item'), 'post-2');
     }
