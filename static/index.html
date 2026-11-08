@@ -16,6 +16,7 @@
         <a class="nav-link active" href="/" data-route aria-current="page"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5.5h16v13H4zM8 5.5V3m8 2.5V3M4 9h16"/></svg>全部</a>
         <a class="nav-link" href="/instagram" data-route><svg class="platform-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="/static/icons/platforms.svg#instagram"/></svg>Instagram</a>
         <a class="nav-link" href="/tiktok" data-route><svg class="platform-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="/static/icons/platforms.svg#tiktok"/></svg>TikTok</a>
+        <a class="nav-link" href="/douyin" data-route><svg class="platform-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="/static/icons/platforms.svg#douyin"/></svg>抖音</a>
         <a class="nav-link" href="/threads" data-route><svg class="platform-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="/static/icons/platforms.svg#threads"/></svg>Threads</a>
         <a class="nav-link" href="/x" data-route><svg class="platform-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="/static/icons/platforms.svg#x"/></svg>X</a>
         <a class="nav-link" href="/settings" data-route><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7zM19 13.3l1.4 1.1-2 3.5-1.8-.7a7.8 7.8 0 0 1-2.3 1.3L14 20.5h-4l-.3-2a7.8 7.8 0 0 1-2.3-1.3l-1.8.7-2-3.5L5 13.3a7.7 7.7 0 0 1 0-2.6L3.6 9.6l2-3.5 1.8.7a7.8 7.8 0 0 1 2.3-1.3l.3-2h4l.3 2a7.8 7.8 0 0 1 2.3 1.3l1.8-.7 2 3.5-1.4 1.1a7.7 7.7 0 0 1 0 2.6z"/></svg>设置</a>
@@ -51,7 +52,7 @@
             <details id="platform-settings" class="settings-group">
               <summary><span>平台与登录</span><span id="platform-summary" class="summary-value">Instagram</span></summary>
               <div class="settings-fields">
-                <label class="wide-field"><span>配置平台</span><select id="settings-platform"><option value="instagram">Instagram</option><option value="tiktok">TikTok</option><option value="threads">Threads</option><option value="x">X</option></select></label>
+                <label class="wide-field"><span>配置平台</span><select id="settings-platform"><option value="instagram">Instagram</option><option value="tiktok">TikTok</option><option value="douyin">抖音</option><option value="threads">Threads</option><option value="x">X</option></select></label>
                 <label id="login-method-field" class="wide-field" hidden><span id="login-method-label">TikTok 登录方式</span><select id="login-method"><option value="password">账号密码</option><option value="cookie">导入 Cookie</option></select></label>
                 <div id="verification-panel" class="verification-panel wide-field" hidden>
                   <div><strong id="verification-title">输入 Instagram 验证码</strong><p>填写短信、邮箱或验证器收到的代码，采集器会继续当前登录。</p></div>
@@ -66,7 +67,7 @@
             </details>
             <details id="targets-settings" class="settings-group">
               <summary><span>关注用户</span><span id="targets-summary" class="summary-value">未设置</span></summary>
-              <div class="settings-fields"><label class="wide-field"><span>关注用户</span><input id="ig-targets" name="targets" required placeholder="例如 instagram, natgeo" autocapitalize="none" spellcheck="false"><small>多个用户名用逗号分隔，不需要输入 @</small></label></div>
+              <div class="settings-fields"><label class="wide-field"><span>关注用户</span><input id="ig-targets" name="targets" required placeholder="例如 instagram, natgeo" autocapitalize="none" spellcheck="false"><small id="targets-note">多个用户名用逗号分隔，不需要输入 @</small></label></div>
             </details>
             <details id="schedule-settings" class="settings-group">
               <summary><span>采集频率</span></summary>
@@ -82,9 +83,9 @@
     </main>
   </div>
   <nav class="bottom-nav" aria-label="手机导航">
-    <a href="/" data-route class="active" aria-current="page"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5.5h16v13H4zM8 5.5V3m8 2.5V3M4 9h16"/></svg><span>全部</span></a>
     <a href="/instagram" data-route aria-label="Instagram"><svg class="platform-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="/static/icons/platforms.svg#instagram"/></svg><span>IG</span></a>
     <a href="/tiktok" data-route><svg class="platform-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="/static/icons/platforms.svg#tiktok"/></svg><span>TikTok</span></a>
+    <a href="/douyin" data-route><svg class="platform-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="/static/icons/platforms.svg#douyin"/></svg><span>抖音</span></a>
     <a href="/threads" data-route><svg class="platform-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="/static/icons/platforms.svg#threads"/></svg><span>Threads</span></a>
     <a href="/x" data-route><svg class="platform-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="/static/icons/platforms.svg#x"/></svg><span>X</span></a>
     <a href="/settings" data-route><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7zM19 13.3l1.4 1.1-2 3.5-1.8-.7a7.8 7.8 0 0 1-2.3 1.3L14 20.5h-4l-.3-2a7.8 7.8 0 0 1-2.3-1.3l-1.8.7-2-3.5L5 13.3a7.7 7.7 0 0 1 0-2.6L3.6 9.6l2-3.5 1.8.7a7.8 7.8 0 0 1 2.3-1.3l.3-2h4l.3 2a7.8 7.8 0 0 1 2.3 1.3l1.8-.7 2 3.5-1.4 1.1a7.7 7.7 0 0 1 0 2.6z"/></svg><span>设置</span></a>

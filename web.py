@@ -83,6 +83,7 @@ def logout():
 @app.get("/tiktok")
 @app.get("/threads")
 @app.get("/x")
+@app.get("/douyin")
 @app.get("/settings")
 def index():
     return FileResponse(ROOT / "static" / "index.html")
@@ -109,7 +110,10 @@ def platform_library(platform):
         items_dir = target_dir / "items"
         if items_dir.exists():
             for item_dir in (path for path in items_dir.iterdir() if path.is_dir()):
-                metadata = read_json(item_dir / "metadata.json", {})
+                metadata_path = item_dir / "metadata.json"
+                if not metadata_path.exists():
+                    continue
+                metadata = read_json(metadata_path, {})
                 files = []
                 for path in sorted(item_dir.iterdir()):
                     if not path.is_file() or path.suffix.lower() not in {".jpg", ".jpeg", ".png", ".webp", ".gif", ".mp4", ".txt"}:
@@ -138,6 +142,7 @@ def state(library_data: bool = True):
     tiktok = config.get("tiktok", {})
     threads = config.get("threads", {})
     x = config.get("x", {})
+    douyin = config.get("douyin", {})
     return {
         "config": {
             "targets": config.get("targets", []),
@@ -148,12 +153,14 @@ def state(library_data: bool = True):
             "tiktok": {"targets": tiktok.get("targets", []), "username": tiktok.get("username", ""), "has_password": bool(tiktok.get("password")), "has_cookie": bool(tiktok.get("cookie")), "login_method": tiktok.get("login_method", "password")},
             "threads": {"targets": threads.get("targets", []), "username": threads.get("username", ""), "has_password": bool(threads.get("password")), "has_cookie": bool(threads.get("cookie")), "login_method": threads.get("login_method", "password")},
             "x": {"targets": x.get("targets", []), "username": x.get("username", ""), "has_password": bool(x.get("password")), "has_cookie": bool(x.get("cookie")), "login_method": x.get("login_method", "password")},
+            "douyin": {"targets": douyin.get("targets", []), "username": "", "has_password": False, "has_cookie": bool(douyin.get("cookie")), "login_method": douyin.get("login_method", "password")},
         },
         "status": read_json(STATUS_PATH, {"state": "not_configured"}),
         "login_screenshot": file_url(DATA_DIR / "login-required.png") if (DATA_DIR / "login-required.png").exists() else None,
         "tiktok_login_screenshot": file_url(DATA_DIR / "tiktok" / "login-required.png") if (DATA_DIR / "tiktok" / "login-required.png").exists() else None,
         "threads_login_screenshot": file_url(DATA_DIR / "threads" / "login-required.png") if (DATA_DIR / "threads" / "login-required.png").exists() else None,
         "x_login_screenshot": file_url(DATA_DIR / "x" / "login-required.png") if (DATA_DIR / "x" / "login-required.png").exists() else None,
+        "douyin_login_screenshot": file_url(DATA_DIR / "douyin" / "login-required.png") if (DATA_DIR / "douyin" / "login-required.png").exists() else None,
         "library": library() if library_data else None,
     }
 
@@ -171,7 +178,7 @@ async def save_config(request: Request):
     password = str(payload.get("password", "")) or str(saved.get("password", ""))
     username = str(payload.get("username", "")).strip()
     try:
-        targets = target_list(payload.get("targets", []))
+        targets = target_list(payload.get("targets", []), platform)
         interval = max(60, min(86_400, int(payload.get("interval", existing.get("interval", 300)))))
         post_limit = max(1, min(24, int(payload.get("post_limit", existing.get("post_limit", 12)))))
     except (ValueError, TypeError) as error:
@@ -183,8 +190,8 @@ async def save_config(request: Request):
     selected = {"targets": targets, "username": username, "password": password}
     if platform == "instagram" and (not username or not password):
         raise HTTPException(400, "请填写 Instagram 账号和密码")
-    if platform in {"tiktok", "threads", "x"}:
-        label = {"tiktok": "TikTok", "threads": "Threads", "x": "X"}[platform]
+    if platform in {"tiktok", "threads", "x", "douyin"}:
+        label = {"tiktok": "TikTok", "threads": "Threads", "x": "X", "douyin": "抖音"}[platform]
         method = payload.get("login_method", saved.get("login_method", "password"))
         if method not in {"password", "cookie"}:
             raise HTTPException(400, "请选择账号密码或 Cookie 登录")
@@ -196,6 +203,8 @@ async def save_config(request: Request):
                 raise HTTPException(400, str(error)) from error
         elif bool(username) != bool(password):
             raise HTTPException(400, f"请同时填写{label}账号和密码，或都留空采集公开账号")
+        elif platform == "douyin" and (username or password):
+            raise HTTPException(400, "抖音仅支持公开模式或 Cookie 登录")
         elif platform == "x" and username and not re.fullmatch(r"[A-Za-z0-9_]{1,15}", username):
             raise HTTPException(400, "X 密码登录请填写 X 用户名，不要填写邮箱")
         selected.update({"login_method": method, "cookie": cookie})
@@ -210,7 +219,7 @@ async def save_config(request: Request):
     root.mkdir(parents=True, exist_ok=True)
     (root / "login-paused.json").unlink(missing_ok=True)
     changed = saved.get("username") and saved.get("username") != username
-    if platform in {"tiktok", "threads", "x"}:
+    if platform in {"tiktok", "threads", "x", "douyin"}:
         changed = changed or saved.get("login_method") != selected["login_method"] or saved.get("cookie", "") != selected["cookie"]
     if changed:
         (root / "reset-session.trigger").write_text(datetime.now(timezone.utc).isoformat(), encoding="utf-8")
@@ -238,7 +247,7 @@ def reset_session(platform: str = "instagram"):
 
 
 def target_dir_or_404(target, platform="instagram"):
-    if platform not in PLATFORMS or not valid_target(target):
+    if platform not in PLATFORMS or not valid_target(target, platform):
         raise HTTPException(404)
     path = platform_dir(DATA_DIR, platform) / "targets" / target
     if not path.is_dir():

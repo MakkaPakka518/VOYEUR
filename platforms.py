@@ -1,23 +1,42 @@
 import json
 import re
 from pathlib import Path
+from urllib.parse import urlparse
 
 
-PLATFORMS = ("instagram", "tiktok", "threads", "x")
+PLATFORMS = ("instagram", "tiktok", "threads", "x", "douyin")
 USERNAME_RE = re.compile(r"^[a-z0-9._]+$")
+DOUYIN_TARGET_RE = re.compile(r"^[A-Za-z0-9_-]{1,160}$")
 
 
-def valid_target(value):
+def valid_target(value, platform="instagram"):
+    if platform == "douyin":
+        return isinstance(value, str) and bool(DOUYIN_TARGET_RE.fullmatch(value))
     return isinstance(value, str) and bool(USERNAME_RE.fullmatch(value)) and value not in {".", ".."}
 
 
-def target_list(value):
+def target_list(value, platform="instagram"):
     if isinstance(value, str):
         value = value.split(",")
     if not isinstance(value, list) or any(not isinstance(item, str) for item in value):
         raise ValueError("请输入有效的目标用户名")
-    targets = list(dict.fromkeys(item.strip().lstrip("@").lower() for item in value if item.strip()))
-    if any(not valid_target(item) for item in targets):
+    if platform == "douyin":
+        targets = []
+        for item in value:
+            item = item.strip()
+            if not item:
+                continue
+            parsed = urlparse(item)
+            if parsed.scheme or parsed.netloc:
+                match = re.fullmatch(r"/user/([^/]+)/?", parsed.path)
+                if parsed.scheme not in {"http", "https"} or parsed.hostname not in {"douyin.com", "www.douyin.com"} or not match:
+                    raise ValueError("请输入有效的抖音主页链接或 sec_user_id")
+                item = match.group(1)
+            if item not in targets:
+                targets.append(item)
+    else:
+        targets = list(dict.fromkeys(item.strip().lstrip("@").lower() for item in value if item.strip()))
+    if any(not valid_target(item, platform) for item in targets):
         raise ValueError("请输入有效的目标用户名")
     return targets
 

@@ -31,7 +31,7 @@ let lastState;
 let librarySignature = '';
 let selectedPlatform = 'instagram';
 let activePlatform = 'all';
-const platformNames = { instagram: 'Instagram', tiktok: 'TikTok', threads: 'Threads', x: 'X' };
+const platformNames = { instagram: 'Instagram', tiktok: 'TikTok', douyin: '抖音', threads: 'Threads', x: 'X' };
 const preview = createMediaPreview(document.querySelector('#media-preview'));
 const themeToggle = createThemeToggle([...document.querySelectorAll('.theme-toggle')]);
 const pages = {
@@ -40,6 +40,7 @@ const pages = {
   '/tiktok': { title: 'TikTok', platform: 'tiktok' },
   '/threads': { title: 'Threads', platform: 'threads' },
   '/x': { title: 'X', platform: 'x' },
+  '/douyin': { title: '抖音', platform: 'douyin' },
   '/settings': { title: '设置', platform: 'all' },
 };
 let currentPage = '';
@@ -92,6 +93,7 @@ function renderStatus(globalStatus = {}) {
     tiktok_blocked: ['TikTok 需要处理', status.error || '请完成登录或更新 Cookie'],
     threads_blocked: ['Threads 需要处理', status.error || '请完成登录或更新 Cookie'],
     x_blocked: ['X 需要处理', status.error || '请完成登录或更新 Cookie'],
+    douyin_blocked: ['抖音需要处理', status.error || '请更新 Cookie 或完成验证'],
     rate_limited: [`${brand} 请求过于频繁`, status.error || '请稍后重试或更新 Cookie'],
   };
   const labels = {
@@ -167,14 +169,14 @@ function renderLibrary(library) {
   const hasContent = library.some(target => target.latest || target.items.length);
   if (!hasContent) {
     elements.library.innerHTML = `
-      <div class="empty-state"><div><h3>还没有收藏</h3><p>配置 Instagram、TikTok、Threads 或 X 关注用户，首次检查后内容会出现在这里。</p><a href="/settings" data-route>前往采集设置</a></div></div>`;
+      <div class="empty-state"><div><h3>还没有收藏</h3><p>配置 Instagram、TikTok、抖音、Threads 或 X 关注用户，首次检查后内容会出现在这里。</p><a href="/settings" data-route>前往采集设置</a></div></div>`;
     syncImageGroups(elements.library);
     return;
   }
   const template = document.createElement('template');
   template.innerHTML = library.map(target => {
     const platform = target.platform || 'instagram', key = target.key || target.name;
-    const profileUrl = platform === 'tiktok' ? `https://www.tiktok.com/@${encodeURIComponent(target.name)}` : platform === 'threads' ? `https://www.threads.com/@${encodeURIComponent(target.name)}` : platform === 'x' ? `https://x.com/${encodeURIComponent(target.name)}` : `https://www.instagram.com/${encodeURIComponent(target.name)}/`;
+    const profileUrl = platform === 'tiktok' ? `https://www.tiktok.com/@${encodeURIComponent(target.name)}` : platform === 'douyin' ? `https://www.douyin.com/user/${encodeURIComponent(target.name)}` : platform === 'threads' ? `https://www.threads.com/@${encodeURIComponent(target.name)}` : platform === 'x' ? `https://x.com/${encodeURIComponent(target.name)}` : `https://www.instagram.com/${encodeURIComponent(target.name)}/`;
     const photos = imageGroupsMarkup(target);
     const cards = target.items.filter(item => item.files.some(file => file.kind === 'video')).map(item => mediaCard(target, item)).join('');
     const textCards = target.items.filter(item => item.files.some(file => file.kind === 'text') && !item.files.some(file => file.kind === 'video' || (file.kind === 'image' && file.name !== 'page.png'))).map(item => textCard(target, item)).join('');
@@ -250,7 +252,8 @@ function hydrateForm(config) {
 }
 
 function updateLoginFields() {
-  const external = selectedPlatform !== 'instagram', cookie = external && elements.loginMethod.value === 'cookie';
+  const external = selectedPlatform !== 'instagram', douyin = selectedPlatform === 'douyin', cookie = external && elements.loginMethod.value === 'cookie';
+  document.querySelector('#login-method option[value="password"]').textContent = douyin ? '公开模式' : '账号密码';
   document.querySelector('#account-label').textContent = `${platformNames[selectedPlatform]} 账号`;
   document.querySelector('#password-label').textContent = `${platformNames[selectedPlatform]} 密码`;
   document.querySelector('#login-method-field').hidden = !external;
@@ -259,11 +262,13 @@ function updateLoginFields() {
   document.querySelector('#cookie-label').textContent = `${platformNames[selectedPlatform]} Cookie`;
   document.querySelector('#cookie-note').textContent = `从已登录 ${platformNames[selectedPlatform]} 的浏览器网络请求中复制 Cookie 请求头的值。`;
   document.querySelector('#public-note').hidden = !external || cookie;
-  document.querySelector('#public-note').textContent = `采集公开 ${platformNames[selectedPlatform]} 账号时，账号和密码可以都留空。`;
-  elements.username.closest('label').hidden = cookie;
-  elements.password.closest('label').hidden = cookie;
+  document.querySelector('#public-note').textContent = douyin ? '公开访问受限时，请改用已登录浏览器的 Cookie。' : `采集公开 ${platformNames[selectedPlatform]} 账号时，账号和密码可以都留空。`;
+  elements.username.closest('label').hidden = cookie || douyin;
+  elements.password.closest('label').hidden = cookie || douyin;
   elements.username.required = !external;
   elements.username.placeholder = selectedPlatform === 'x' ? 'X 用户名' : external ? '邮箱或用户名' : '手机号、邮箱或用户名';
+  elements.targets.placeholder = douyin ? '抖音主页链接或 sec_user_id' : '例如 instagram, natgeo';
+  document.querySelector('#targets-note').textContent = douyin ? '粘贴 www.douyin.com/user/... 主页链接，多个用逗号分隔' : '多个用户名用逗号分隔，不需要输入 @';
   document.querySelector('#reset-session').textContent = `重置 ${platformNames[selectedPlatform]} 会话`;
   document.querySelector('#platform-summary').textContent = platformNames[selectedPlatform];
   renderStatus(lastState?.status || {});
@@ -429,7 +434,7 @@ function showPage(path, focus = false) {
   const icon = document.querySelector('#page-brand');
   icon.hidden = page.platform === 'all';
   icon.querySelector('use').setAttribute('href', `/static/icons/platforms.svg#${page.platform}`);
-  document.querySelectorAll('.side-nav a[data-route], .bottom-nav a[data-route]').forEach(link => {
+  document.querySelectorAll('.side-nav a[data-route], .bottom-nav a[data-route], .mobile-header .wordmark[data-route]').forEach(link => {
     const active = link.getAttribute('href') === path;
     link.classList.toggle('active', active);
     if (active) link.setAttribute('aria-current', 'page'); else link.removeAttribute('aria-current');

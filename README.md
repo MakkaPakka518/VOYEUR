@@ -1,12 +1,13 @@
 # ig luv
 
-Private web panel and Playwright collector for Instagram, TikTok, Threads and X profiles visible to your account. It keeps persistent browser sessions, overwrites each target's latest profile screenshot, archives newly observed posts, and downloads their text, images and videos.
+Private web panel and Playwright collector for Instagram, TikTok, Douyin, Threads and X profiles visible to your account. It keeps persistent browser sessions, overwrites each target's latest profile screenshot, archives newly observed posts, and downloads their text, images and videos.
 
 ## Features
 
 - Password-protected web panel for desktop and mobile.
 - Instagram login with password-error and verification-code handling in the panel.
 - TikTok account/password login, verification feedback, and Cookie import as a fallback.
+- Douyin public collection and Cookie import.
 - Threads public collection plus account/password and Cookie login fallbacks.
 - X public collection plus account/password and Cookie login fallbacks.
 - Platform-specific configuration, sessions, archives, status and deletion.
@@ -49,7 +50,18 @@ Private profiles require a valid session with access to them. Expired Cookies an
 reported as failures, and incomplete downloads are retried instead of being marked as archived.
 
 All platforms use the same polling interval and per-user post limit. Their browser sessions are opened
-sequentially to fit the VPS memory limit. Library pages separate Instagram, TikTok, Threads, X and the combined view.
+sequentially to fit the VPS memory limit. Library pages separate Instagram, TikTok, Douyin, Threads, X and the combined view.
+
+## Douyin
+
+Choose **抖音** in settings and paste one or more full `https://www.douyin.com/user/...` profile
+links. The panel extracts and preserves each case-sensitive `sec_user_id`; display names and Douyin IDs
+are not accepted because they are ambiguous.
+
+Public mode uses the profile page's own signed browser requests. If Douyin returns a login wall or risk
+verification, sign in to `www.douyin.com` in your browser, copy the complete `Cookie` request-header
+value, and switch to **Cookie** login. The Cookie commonly contains `sessionid`, `ttwid`, `odin_tt` and
+`s_v_web_id`. Albums, videos and live-photo clips are archived under `data/douyin/`.
 
 ## Threads
 
@@ -82,19 +94,21 @@ Everything is stored under `data/`:
 - `data/status.json`: latest collector state.
 - `data/targets/<username>/`: profile screenshot, per-target status, and archived items.
 - `data/tiktok/`: TikTok browser profile, seen-post IDs, verification, screenshots and `targets/` archives.
+- `data/douyin/`: Douyin browser profile, seen-post IDs, screenshots and `targets/` archives.
 - `data/threads/`: Threads browser profile, seen-post IDs, verification, screenshots and `targets/` archives.
 - `data/x/`: X browser profile, seen-post IDs, screenshots and `targets/` archives.
-- `data/config.json` retains the original Instagram fields and adds separate `tiktok`, `threads` and `x` objects.
+- `data/config.json` retains the original Instagram fields and adds separate `tiktok`, `douyin`, `threads` and `x` objects.
 
 `data/` is ignored by git. Back it up if you want to keep the session and archive.
 
 ## Image viewer
 
 The panel has separate, directly loadable pages: `/` for all platforms, `/instagram`, `/tiktok`,
-`/threads`, `/x`, and `/settings`. Desktop navigation and the six-tab mobile bar use the same routes.
+`/douyin`, `/threads`, `/x`, and `/settings`. Desktop navigation includes all routes. The six-tab mobile
+bar contains the five platforms and settings; tap the `ig luv` wordmark for the combined view.
 The settings page groups platform/login, target users, and collection frequency into native
 expandable sections, initially collapsed. Settings no longer appear below media.
-Instagram, TikTok, Threads and X icons are included locally from Simple Icons (CC0-1.0).
+Instagram, TikTok, Threads and X icons are included locally from Simple Icons (CC0-1.0); Douyin uses the local musical-note mark.
 
 The header includes a compact [LeiBox Pixel Day–Night Toggle](https://leibox.pantoria.cn/docs/animations/pixel-toggle)
 beside the refresh action. It keeps the original Canvas2D particles, drag/touch and keyboard behavior,

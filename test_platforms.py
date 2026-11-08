@@ -12,6 +12,7 @@ import app
 import tiktok
 import threads
 import x as x_platform
+import douyin
 import web
 from platforms import parse_cookie, read_json, target_list, write_json
 
@@ -47,10 +48,14 @@ class PlatformTests(unittest.TestCase):
     def save_x(self, **options):
         return self.client.post("/api/config", json={"platform": "x", "targets": ["demo"], "username": "xaccount", "password": "x-secret", **options})
 
+    def save_douyin(self, **options):
+        return self.client.post("/api/config", json={"platform": "douyin", "targets": ["https://www.douyin.com/user/MS4wLjAB_Test-ID"], "username": "", "password": "", **options})
+
     def test_config_preserves_instagram_and_hides_both_secrets(self):
         self.assertEqual(self.save_tiktok().status_code, 200)
         self.assertEqual(self.save_threads().status_code, 200)
         self.assertEqual(self.save_x().status_code, 200)
+        self.assertEqual(self.save_douyin().status_code, 200)
         saved = read_json(self.root / "config.json", {})
         self.assertEqual(saved["password"], "ig-secret")
         self.assertEqual(saved["targets"], ["demo"])
@@ -64,11 +69,12 @@ class PlatformTests(unittest.TestCase):
         self.assertNotIn("tk-secret", str(response))
         self.assertNotIn("th-secret", str(response))
         self.assertNotIn("x-secret", str(response))
+        self.assertEqual(response["config"]["douyin"]["targets"], ["MS4wLjAB_Test-ID"])
         self.client.post("/api/config", json={**self.ig, "password": ""})
         self.assertEqual(read_json(self.root / "config.json", {})["tiktok"]["password"], "tk-secret")
 
     def test_separate_pages_are_authenticated_and_directly_loadable(self):
-        for path in ("/", "/instagram", "/tiktok", "/threads", "/x", "/settings"):
+        for path in ("/", "/instagram", "/tiktok", "/threads", "/x", "/douyin", "/settings"):
             response = self.client.get(path)
             self.assertEqual(response.status_code, 200)
             self.assertIn("text/html", response.headers["content-type"])
@@ -84,11 +90,14 @@ class PlatformTests(unittest.TestCase):
         self.assertEqual(config["password"], "tk-secret")
         self.assertEqual(self.save_threads(login_method="cookie", cookie="sessionid=threads-session").status_code, 200)
         self.assertEqual(self.save_x(login_method="cookie", cookie="auth_token=x-session; ct0=csrf").status_code, 200)
+        self.assertEqual(self.save_douyin(login_method="cookie", cookie="sessionid=douyin-session; ttwid=device").status_code, 200)
         state = self.client.get("/api/state").json()
         self.assertTrue(state["config"]["threads"]["has_cookie"])
         self.assertNotIn("threads-session", str(state))
         self.assertTrue(state["config"]["x"]["has_cookie"])
         self.assertNotIn("x-session", str(state))
+        self.assertTrue(state["config"]["douyin"]["has_cookie"])
+        self.assertNotIn("douyin-session", str(state))
         self.assertTrue((self.root / "tiktok/reset-session.trigger").exists())
         state = self.client.get("/api/state").json()
         self.assertTrue(state["config"]["tiktok"]["has_cookie"])
@@ -105,23 +114,30 @@ class PlatformTests(unittest.TestCase):
             self.assertEqual(self.save_tiktok(**payload).status_code, 400, payload)
         self.assertEqual(self.save_tiktok(username="name", password="").status_code, 400)
         self.assertEqual(target_list("@Demo, DEMO, other.name"), ["demo", "other.name"])
+        self.assertEqual(target_list("https://www.douyin.com/user/MS4wLjAB_Test-ID?from=web", "douyin"), ["MS4wLjAB_Test-ID"])
         with self.assertRaises(ValueError):
             parse_cookie("sessionid=test\nvalue")
         self.assertEqual(self.save_x(targets=["not.valid"]).status_code, 400)
         self.assertEqual(self.save_x(username="mail@example.com", password="secret").status_code, 400)
+        self.assertEqual(self.save_douyin(targets=["https://evil.example/user/test"]).status_code, 400)
+        self.assertEqual(self.save_douyin(username="account", password="secret").status_code, 400)
 
     def test_library_and_deletion_isolate_same_username_and_post_id(self):
-        for folder in (self.root, self.root / "tiktok", self.root / "threads", self.root / "x"):
+        for folder in (self.root, self.root / "tiktok", self.root / "threads", self.root / "x", self.root / "douyin"):
             directory = folder / "targets/demo/items/123"
             directory.mkdir(parents=True)
             (directory / "media-01.jpg").write_bytes(b"image")
             (directory / "media-02.mp4").write_bytes(b"video")
             (directory / "ignored.part").write_bytes(b"partial")
             write_json(directory / "metadata.json", {"captured_at": "2026-11-08T00:00:00Z"})
+        incomplete = self.root / "douyin/targets/demo/items/incomplete"
+        incomplete.mkdir(parents=True)
+        (incomplete / "page.png").write_bytes(b"partial")
         library = self.client.get("/api/state").json()["library"]
-        self.assertEqual([item["key"] for item in library], ["demo", "tiktok:demo", "threads:demo", "x:demo"])
+        self.assertEqual([item["key"] for item in library], ["demo", "tiktok:demo", "threads:demo", "x:demo", "douyin:demo"])
         self.assertTrue(library[1]["items"][0]["files"][0]["url"].startswith("/files/tiktok/"))
         self.assertEqual(len(library[1]["items"][0]["files"]), 2)
+        self.assertEqual([item["id"] for item in library[-1]["items"]], ["123"])
         self.assertEqual(self.client.delete("/api/targets/demo/items/123?platform=tiktok").status_code, 200)
         self.assertTrue((self.root / "targets/demo/items/123/media-01.jpg").exists())
         self.assertEqual(self.client.delete("/api/targets/demo?platform=tiktok").status_code, 200)
@@ -131,6 +147,16 @@ class PlatformTests(unittest.TestCase):
         self.assertTrue((self.root / "targets/demo/items/123/media-01.jpg").exists())
         self.assertEqual(self.client.delete("/api/targets/demo?platform=other").status_code, 404)
         self.assertEqual(self.client.delete("/api/targets/..%2Fdemo").status_code, 404)
+
+        case_target = "MS4wLjAB_Test-ID"
+        case_item = self.root / f"douyin/targets/{case_target}/items/456"
+        lower_item = self.root / "douyin/targets/ms4wljab_test-id/items/456"
+        case_item.mkdir(parents=True)
+        lower_item.mkdir(parents=True)
+        self.assertEqual(self.client.delete(f"/api/targets/{case_target}/items/456?platform=douyin").status_code, 200)
+        self.assertTrue(lower_item.exists())
+        self.assertEqual(self.client.delete(f"/api/targets/{case_target}?platform=douyin").status_code, 200)
+        self.assertTrue(lower_item.exists())
 
     def test_verification_and_reset_are_platform_scoped(self):
         self.assertEqual(self.client.post("/api/verification?platform=tiktok", json={"code": "123456"}).status_code, 200)
@@ -146,22 +172,26 @@ class PlatformTests(unittest.TestCase):
         self.save_tiktok()
         self.save_threads()
         self.save_x()
+        self.save_douyin()
         manager = MagicMock()
         with patch.object(app, "sync_playwright", return_value=manager), \
              patch.object(app, "run_cycle", side_effect=app.LoginError("invalid_credentials", "test login failure")), \
               patch.object(app, "run_tiktok_cycle", return_value={"state": "ready", "targets": []}) as run_tiktok, \
               patch.object(app, "run_threads_cycle", return_value={"state": "ready", "targets": []}) as run_threads, \
               patch.object(app, "run_x_cycle", return_value={"state": "ready", "targets": []}) as run_x, \
+              patch.object(app, "run_douyin_cycle", return_value={"state": "ready", "targets": []}) as run_douyin, \
              patch.object(sys, "argv", ["app.py", "--once"]):
             app.main()
         run_tiktok.assert_called_once()
         run_threads.assert_called_once()
         run_x.assert_called_once()
+        run_douyin.assert_called_once()
         status = read_json(self.root / "status.json", {})
         self.assertEqual(status["platforms"]["instagram"]["state"], "error")
         self.assertEqual(status["platforms"]["tiktok"]["state"], "ready")
         self.assertEqual(status["platforms"]["threads"]["state"], "ready")
         self.assertEqual(status["platforms"]["x"]["state"], "ready")
+        self.assertEqual(status["platforms"]["douyin"]["state"], "ready")
 
     def test_config_trigger_arriving_during_a_cycle_is_not_lost(self):
         (self.root / "run.trigger").write_text("new settings")
@@ -294,6 +324,65 @@ class PlatformTests(unittest.TestCase):
         context.request.get.return_value = response
         self.assertEqual(x_platform.download(context, ["https://video.twimg.com/high.mp4"], "video", self.root, 1, "https://x.com/demo/status/123"), "media-01.mp4")
         self.assertEqual((self.root / "media-01.mp4").read_bytes(), b"video contents")
+
+    def test_douyin_parses_media_cookie_and_download(self):
+        photo = {"aweme_id": "7666666666666666666", "desc": "图文", "author": {"sec_uid": "MS4wLjAB_Test-ID"}, "images": [
+            {"url_list": ["https://p3.douyinpic.com/preview.jpg", "https://p3.douyinpic.com/original.jpg"]},
+            {"url_list": ["https://p3.douyinpic.com/second.jpg"]},
+        ]}
+        video = {"aweme_id": "7677873898611989236", "desc": "视频", "author": {"sec_uid": "MS4wLjAB_Test-ID"}, "video": {
+            "play_addr_h264": {"uri": "v0200test", "url_list": ["https://v3.douyinvod.com/video.mp4"]},
+            "bit_rate": [
+                {"bit_rate": 800000, "is_h265": 0, "play_addr": {"url_list": ["https://v3.douyinvod.com/hd.mp4"]}},
+                {"bit_rate": 1200000, "is_h265": 1, "play_addr": {"url_list": ["https://v3.douyinvod.com/h265.mp4"]}},
+            ],
+        }}
+        data = {"aweme_list": [photo, video, {**video, "aweme_id": "7688888888888888888", "author": {"sec_uid": "other"}}, {**video, "aweme_id": "7699999999999999999", "author": {}}]}
+        self.assertEqual(set(douyin.extract_items(data, "MS4wLjAB_Test-ID")), {"7666666666666666666", "7677873898611989236"})
+        self.assertEqual(douyin.media_groups(photo)[0], ("image", ["https://p3.douyinpic.com/original.jpg", "https://p3.douyinpic.com/preview.jpg"]))
+        video_urls = douyin.media_groups(video)[0][1]
+        self.assertEqual(video_urls[0], "https://v3.douyinvod.com/hd.mp4")
+        self.assertFalse(any("h265" in url for url in video_urls))
+        self.assertTrue(any("video_id=v0200test" in url for url in video_urls))
+
+        context = MagicMock()
+        self.assertEqual(douyin.login(context, {"login_method": "cookie", "cookie": "sessionid=douyin-session; ttwid=device"}), "cookie")
+        self.assertEqual(context.add_cookies.call_args.args[0][0]["domain"], ".douyin.com")
+        response = MagicMock(ok=True, headers={"content-type": "image/jpeg"})
+        response.body.return_value = b"image contents"
+        context.request.get.return_value = response
+        self.assertEqual(douyin.download(context, ["https://p3.douyinpic.com/original.jpg"], "image", self.root, 1, "https://www.douyin.com/note/7666666666666666666"), "media-01.jpg")
+        self.assertEqual((self.root / "media-01.jpg").read_bytes(), b"image contents")
+        self.assertEqual(context.request.get.call_args.kwargs["headers"]["Referer"], "https://www.douyin.com/note/7666666666666666666")
+
+        script_page = MagicMock()
+        script_page.locator.return_value.all_text_contents.return_value = ['{"aweme_id":"7666666666666666666","desc":"Fish &quot; Chips","author":{"sec_uid":"MS4wLjAB_Test-ID"},"images":[{"url_list":["https://p3.douyinpic.com/a.jpg"]}]}']
+        self.assertEqual(douyin.page_data(script_page)[0]["desc"], "Fish &quot; Chips")
+
+    def test_douyin_retries_persisted_failures_outside_current_limit(self):
+        root = self.root / "douyin"
+        target = "MS4wLjAB_Test-ID"
+        old_id, current_id = "7555555555555555555", "7666666666666666666"
+        old_url = f"https://www.douyin.com/video/{old_id}"
+        write_json(root / "pending.json", {target: {old_id: old_url}})
+        current = {"aweme_id": current_id, "author": {"sec_uid": target}, "video": {"play_addr": {"url_list": ["https://v3.douyinvod.com/current.mp4"]}}}
+        page = MagicMock()
+        page.locator.return_value.evaluate_all.return_value = []
+        page.locator.return_value.inner_text.return_value = ""
+        attempts = []
+
+        def archive(*args):
+            post_id = args[4]
+            attempts.append(post_id)
+            if post_id == old_id:
+                raise douyin.DouyinError("media_unavailable", "retry")
+            return {"id": post_id, "url": args[6], "media": ["media-01.mp4"]}
+
+        with patch.object(douyin, "page_data", return_value=[{"aweme_list": [current]}]), patch.object(douyin, "archive_post", side_effect=archive):
+            result = douyin.collect_target(MagicMock(), page, root, target, {}, 1)
+        self.assertEqual(attempts, [old_id, current_id])
+        self.assertEqual(result["failed_items"][0]["id"], old_id)
+        self.assertEqual(read_json(root / "pending.json", {})[target], {old_id: old_url})
 
 
 if __name__ == "__main__":
