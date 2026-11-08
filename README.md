@@ -1,11 +1,13 @@
 # ig luv
 
-Private web panel and Playwright collector for Instagram profiles visible to your account. It keeps a persistent browser session, overwrites each target's latest profile screenshot, archives newly observed posts and reels, and downloads their images and videos.
+Private web panel and Playwright collector for Instagram and TikTok profiles visible to your account. It keeps persistent browser sessions, overwrites each target's latest profile screenshot, archives newly observed posts, and downloads their images and videos.
 
 ## Features
 
 - Password-protected web panel for desktop and mobile.
 - Instagram login with password-error and verification-code handling in the panel.
+- TikTok account/password login, verification feedback, and Cookie import as a fallback.
+- Platform-specific configuration, sessions, archives, status and deletion.
 - Configurable targets, polling interval, and how many recent posts to check.
 - Per-post screenshots plus original images and MP4 videos.
 - Browse, open, download, and delete archived content from the panel.
@@ -28,6 +30,25 @@ docker compose logs -f
 
 Open `https://<PANEL_DOMAIN>:8443`, sign in with `PANEL_PASSWORD`, then configure the Instagram account, targets, interval, and post limit in the panel.
 
+## TikTok
+
+In settings, choose **TikTok**, enter the target usernames, and select an authentication method:
+
+- **Account/password:** enter your TikTok account and password. Leave both empty to try public profiles.
+- **Cookie:** sign in to TikTok in your own browser, open Developer Tools → Network, select a request
+  to `www.tiktok.com`, and copy the value of its `Cookie` request header. Paste only the value,
+  such as `sessionid=...; sessionid_ss=...`, into the panel. Blank keeps a previously saved Cookie.
+
+If TikTok requests a code, enter it in the panel. Captchas and manual challenges are shown as
+requiring attention with a screenshot; switch to Cookie import if account/password login cannot complete.
+When TikTok reports too many login attempts, password retries pause until you save updated settings,
+reset the TikTok session, or switch to Cookie login.
+Private profiles require a valid session with access to them. Expired Cookies and missing media are
+reported as failures, and incomplete downloads are retried instead of being marked as archived.
+
+Both platforms use the same polling interval and per-user post limit. Their browser sessions are opened
+sequentially to fit the VPS memory limit. Library filters let you select Instagram, TikTok or both.
+
 ## Data
 
 Everything is stored under `data/`:
@@ -36,6 +57,8 @@ Everything is stored under `data/`:
 - `data/profile/`: persistent Chromium profile and Instagram session.
 - `data/status.json`: latest collector state.
 - `data/targets/<username>/`: profile screenshot, per-target status, and archived items.
+- `data/tiktok/`: TikTok browser profile, seen-post IDs, verification, screenshots and `targets/` archives.
+- `data/config.json` retains the original Instagram fields and adds a separate `tiktok` object.
 
 `data/` is ignored by git. Back it up if you want to keep the session and archive.
 
@@ -59,6 +82,8 @@ Install Playwright and its Chromium browser for the isolated regression check:
 npm install --no-save playwright
 npx playwright install chromium
 node test_carousel.mjs
+python -m pip install httpx
+python -m unittest -v test_platforms.py
 ```
 
 The test uses local synthetic photos and an API fixture; it does not access or modify VPS data.
@@ -66,6 +91,8 @@ It checks reveal colors, rapid interruption, keyboard/touch, image failures, vis
 reduced motion, WebGL context recovery, teardown, gallery actions and 375/768/1440 layouts.
 At 375px it also checks that photos are at least 350px wide, with large left/right touch regions.
 Set `ARTIFACT_DIR` to choose where screenshots are saved.
+The Python checks cover saved-credential privacy, configuration preservation, same-name target isolation,
+platform-scoped deletion/verification/reset, TikTok media parsing and independent collector failures.
 
 ## Notes
 

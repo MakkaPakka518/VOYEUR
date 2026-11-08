@@ -11,6 +11,9 @@ from urllib.parse import urlparse
 from playwright.sync_api import TimeoutError as PlaywrightTimeout
 from playwright.sync_api import sync_playwright
 
+from platforms import read_json, write_json, target_list
+from tiktok import run_cycle as run_tiktok_cycle
+
 
 DATA_DIR = Path(os.getenv("DATA_DIR", "/data"))
 CONFIG_PATH = DATA_DIR / "config.json"
@@ -18,7 +21,6 @@ STATUS_PATH = DATA_DIR / "status.json"
 TRIGGER_PATH = DATA_DIR / "run.trigger"
 RESET_PATH = DATA_DIR / "reset-session.trigger"
 VERIFICATION_PATH = DATA_DIR / "verification.json"
-USERNAME_RE = re.compile(r"^[a-z0-9._]+$")
 
 
 class LoginError(RuntimeError):
@@ -31,32 +33,18 @@ def now():
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
-def write_json(path, value):
-    path.parent.mkdir(parents=True, exist_ok=True)
-    temporary = path.with_suffix(path.suffix + ".tmp")
-    temporary.write_text(json.dumps(value, ensure_ascii=False, indent=2), encoding="utf-8")
-    temporary.replace(path)
-
-
-def read_json(path, default):
-    try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except (FileNotFoundError, json.JSONDecodeError):
-        return default
-
-
 def load_config():
     saved = read_json(CONFIG_PATH, {})
-    targets = saved.get("targets", [])
-    if isinstance(targets, str):
-        targets = targets.split(",")
-    targets = [target.strip().lstrip("@").lower() for target in targets if target.strip()]
+    targets = target_list(saved.get("targets", []))
+    tiktok = dict(saved.get("tiktok", {}))
+    tiktok["targets"] = target_list(tiktok.get("targets", []))
     return {
         "targets": targets,
         "username": str(saved.get("username", "")),
         "password": str(saved.get("password", "")),
         "interval": max(60, min(86_400, int(saved.get("interval", 300)))),
         "post_limit": max(1, min(24, int(saved.get("post_limit", 12)))),
+        "tiktok": tiktok,
     }
 
 
@@ -276,7 +264,6 @@ def collect_target(context, page, target, seen, post_limit):
 
 
 def run_cycle(playwright, config, seen):
-    write_json(STATUS_PATH, {"state": "running", "started_at": now(), "targets": []})
     context = playwright.chromium.launch_persistent_context(
         str(DATA_DIR / "profile"),
         headless=True,
@@ -304,23 +291,24 @@ def run_cycle(playwright, config, seen):
                 results.append(result)
                 print(json.dumps(result, ensure_ascii=False), flush=True)
         state = "error" if any("error" in result for result in results) else "ready"
-        write_json(STATUS_PATH, {
+        return {
             "state": state,
             "checked_at": now(),
             "login_mode": login_mode,
             "targets": results,
-        })
+        }
     finally:
         context.close()
 
 
-def wait_for_trigger(seconds):
-    marker = TRIGGER_PATH.stat().st_mtime_ns if TRIGGER_PATH.exists() else 0
+def wait_for_trigger(seconds, marker=None):
+    if marker is None:
+        marker = TRIGGER_PATH.stat().st_mtime_ns if TRIGGER_PATH.exists() else 0
     for _ in range(seconds):
-        time.sleep(1)
         current = TRIGGER_PATH.stat().st_mtime_ns if TRIGGER_PATH.exists() else 0
         if current != marker:
             return
+        time.sleep(1)
 
 
 def main():
@@ -328,35 +316,48 @@ def main():
     seen = read_json(DATA_DIR / "seen.json", {})
     with sync_playwright() as playwright:
         while True:
-            config = load_config()
-            invalid = [target for target in config["targets"] if not USERNAME_RE.fullmatch(target)]
-            if not config["targets"] or invalid:
+            trigger = TRIGGER_PATH.stat().st_mtime_ns if TRIGGER_PATH.exists() else 0
+            try:
+                config = load_config()
+            except (ValueError, TypeError) as error:
+                write_json(STATUS_PATH, {"state": "error", "checked_at": now(), "error": str(error)})
+                if "--once" in sys.argv:
+                    break
+                wait_for_trigger(30, trigger)
+                continue
+            if not config["targets"] and not config["tiktok"]["targets"]:
                 write_json(STATUS_PATH, {
                     "state": "not_configured",
                     "checked_at": now(),
                     "error": "请先配置有效的目标用户名",
                 })
-                wait_for_trigger(30)
+                wait_for_trigger(30, trigger)
                 continue
-            if RESET_PATH.exists():
-                shutil.rmtree(DATA_DIR / "profile", ignore_errors=True)
-                RESET_PATH.unlink()
-            try:
-                run_cycle(playwright, config, seen)
-            except LoginError as error:
-                write_json(STATUS_PATH, {
-                    "state": "error",
-                    "checked_at": now(),
-                    "error": str(error),
-                    "error_code": error.code,
-                })
-                print(str(error), flush=True)
-            except Exception as error:
-                write_json(STATUS_PATH, {"state": "error", "checked_at": now(), "error": str(error)})
-                print(str(error), flush=True)
+            previous = read_json(STATUS_PATH, {})
+            statuses = previous.get("platforms", {"instagram": previous})
+            for platform, selected in (("instagram", config), ("tiktok", config["tiktok"])):
+                if not selected["targets"]:
+                    statuses[platform] = {"state": "not_configured"}
+                    continue
+                statuses[platform] = {"state": "running", "started_at": now(), "targets": []}
+                write_json(STATUS_PATH, {"state": "running", "active_platform": platform, "started_at": now(), "platforms": statuses})
+                try:
+                    if platform == "instagram":
+                        if RESET_PATH.exists():
+                            shutil.rmtree(DATA_DIR / "profile", ignore_errors=True)
+                            RESET_PATH.unlink()
+                        statuses[platform] = run_cycle(playwright, config, seen)
+                    else:
+                        statuses[platform] = run_tiktok_cycle(playwright, selected, DATA_DIR / "tiktok", config["post_limit"])
+                except Exception as error:
+                    statuses[platform] = {"state": "error", "checked_at": now(), "error": str(error), "error_code": getattr(error, "code", "collection_failed")}
+                    print(f"{platform}: {error}", flush=True)
+            configured = [value for value in statuses.values() if value.get("state") != "not_configured"]
+            state = "error" if any(value.get("state") == "error" for value in configured) else "ready"
+            write_json(STATUS_PATH, {"state": state, "checked_at": now(), "platforms": statuses, "targets": [target for value in configured for target in value.get("targets", [])]})
             if "--once" in sys.argv:
                 break
-            wait_for_trigger(config["interval"])
+            wait_for_trigger(config["interval"], trigger)
 
 
 if __name__ == "__main__":

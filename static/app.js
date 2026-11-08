@@ -18,12 +18,18 @@ const elements = {
   verificationPanel: document.querySelector('#verification-panel'),
   verificationCode: document.querySelector('#verification-code'),
   toast: document.querySelector('#toast'),
+  platform: document.querySelector('#settings-platform'),
+  loginMethod: document.querySelector('#login-method'),
+  cookie: document.querySelector('#tiktok-cookie'),
 };
 
 let hydrated = false;
 let activeFilter = 'all';
 let lastState;
 let librarySignature = '';
+let selectedPlatform = 'instagram';
+let activePlatform = 'all';
+const platformNames = { instagram: 'Instagram', tiktok: 'TikTok' };
 
 const escapeHtml = (value = '') => String(value).replace(/[&<>'"]/g, character => ({
   '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;'
@@ -55,16 +61,20 @@ async function api(path, options) {
   return body;
 }
 
-function renderStatus(status = {}) {
+function renderStatus(globalStatus = {}) {
+  const status = globalStatus.platforms?.[selectedPlatform] || (selectedPlatform === 'instagram' ? globalStatus : {});
+  const brand = platformNames[selectedPlatform];
   const errors = {
-    invalid_credentials: ['账号或密码错误', '请在设置中修改 Instagram 账号或密码后重试'],
-    verification_required: ['需要验证码', '输入 Instagram 发来的验证码以继续登录'],
+    invalid_credentials: ['账号或密码错误', `请在设置中修改 ${brand} 账号或密码后重试`],
+    verification_required: ['需要验证码', `输入 ${brand} 发来的验证码以继续登录`],
     invalid_verification: ['验证码错误', '请输入新验证码后再次提交'],
-    manual_verification: ['需要确认登录', '按登录截图提示完成 Instagram 安全确认'],
-    login_page_changed: ['登录页面已变化', '查看登录截图确认 Instagram 当前页面'],
+    manual_verification: ['需要确认登录', selectedPlatform === 'tiktok' ? '查看登录截图完成验证，或切换 Cookie 登录' : '按登录截图提示完成 Instagram 安全确认'],
+    login_page_changed: ['登录页面已变化', `查看登录截图确认 ${brand} 当前页面`],
+    tiktok_blocked: ['TikTok 需要处理', status.error || '请完成登录或更新 Cookie'],
+    rate_limited: ['TikTok 登录过于频繁', '已暂停密码重试，请改用 Cookie 或更新登录设置后再试'],
   };
   const labels = {
-    not_configured: ['等待配置', '填写 Instagram 账号和关注用户后开始采集'],
+    not_configured: ['等待配置', `填写 ${brand} 关注用户后开始采集`],
     running: ['正在检查', '浏览器正在读取关注用户的最新内容'],
     ready: ['采集正常', '会话有效，等待下一次检查'],
     error: ['需要处理', status.error || '检查失败，请查看目标状态'],
@@ -75,9 +85,12 @@ function renderStatus(status = {}) {
   elements.statusDetail.textContent = detail;
   elements.statusTime.textContent = formatDate(status.checked_at || status.started_at);
   elements.railState.textContent = title;
-  elements.statusAction.hidden = !lastState?.login_screenshot;
-  elements.statusAction.href = lastState?.login_screenshot || '#';
-  elements.verificationPanel.hidden = !['verification_required', 'invalid_verification'].includes(status.error_code);
+  const screenshot = selectedPlatform === 'tiktok' ? lastState?.tiktok_login_screenshot : lastState?.login_screenshot;
+  elements.statusAction.hidden = !screenshot;
+  elements.statusAction.href = screenshot || '#';
+  document.querySelector('#verification-title').textContent = `输入 ${brand} 验证码`;
+  elements.verificationPanel.hidden = !['verification_required', 'invalid_verification'].includes(status.error_code)
+    || (selectedPlatform === 'tiktok' && elements.loginMethod.value === 'cookie');
 }
 
 function previewFor(item) {
@@ -85,23 +98,24 @@ function previewFor(item) {
 }
 
 function mediaCard(target, item, snapshot = false) {
+  const name = target.name, key = target.key || name, platform = target.platform || 'instagram';
   const preview = snapshot ? { name: '主页截图', kind: 'screenshot', url: item.latest } : previewFor(item);
   if (!preview) return '';
   const kind = snapshot ? 'screenshot' : preview.kind;
   const source = kind === 'video'
     ? `<video src="${escapeHtml(preview.url)}" controls preload="metadata"></video>`
-    : `<img src="${escapeHtml(preview.url)}" alt="@${escapeHtml(target)} 的${kind === 'screenshot' ? '截图' : '图片'}" loading="lazy">`;
+    : `<img src="${escapeHtml(preview.url)}" alt="@${escapeHtml(name)} 的${kind === 'screenshot' ? '截图' : '图片'}" loading="lazy">`;
   const title = snapshot ? '主页快照' : item.id;
   const files = snapshot ? [{ name: 'latest.png', url: item.latest }] : item.files;
   const fileLinks = files.map(file => `
     <a href="${escapeHtml(file.url)}?download=1"><span>${escapeHtml(file.name)}</span><small>下载</small></a>`).join('');
-  const deleteButton = snapshot ? '' : `<button class="delete-button" type="button" data-target="${escapeHtml(target)}" data-item="${escapeHtml(item.id)}">删除</button>`;
+  const deleteButton = snapshot ? '' : `<button class="delete-button" type="button" data-platform="${platform}" data-target="${escapeHtml(name)}" data-item="${escapeHtml(item.id)}">删除</button>`;
   return `
-    <article class="media-card" data-kind="${kind}" data-media-key="${escapeHtml(target)}:video:${escapeHtml(item.id)}" data-signature="${escapeHtml(JSON.stringify(item))}">
+    <article class="media-card" data-kind="${kind}" data-media-key="${escapeHtml(key)}:video:${escapeHtml(item.id)}" data-signature="${escapeHtml(JSON.stringify(item))}">
       <div class="media-frame">${source}<span class="file-badge">${kind === 'video' ? '视频' : kind === 'screenshot' ? '截图' : '图片'}</span></div>
       <div class="media-body">
         <div class="media-title"><span>${escapeHtml(title)}</span><time>${snapshot ? '' : formatDate(item.captured_at)}</time></div>
-        <p class="caption">${snapshot ? `@${escapeHtml(target)} 最近一次主页检查` : escapeHtml(item.caption || '已归档 Instagram 内容')}</p>
+        <p class="caption">${snapshot ? `@${escapeHtml(name)} 最近一次主页检查` : escapeHtml(item.caption || `已归档 ${platformNames[platform]} 内容`)}</p>
         <div class="media-actions">
           <a href="${escapeHtml(preview.url)}" target="_blank" rel="noreferrer">查看</a>
           ${!snapshot && item.source_url ? `<a href="${escapeHtml(item.source_url)}" target="_blank" rel="noreferrer">原帖</a>` : ''}
@@ -116,17 +130,19 @@ function renderLibrary(library) {
   const hasContent = library.some(target => target.latest || target.items.length);
   if (!hasContent) {
     elements.library.innerHTML = `
-      <div class="empty-state"><div><h3>还没有收藏</h3><p>完成 Instagram 登录并添加关注用户，首次检查后内容会出现在这里。</p><a href="#settings">前往采集设置</a></div></div>`;
+      <div class="empty-state"><div><h3>还没有收藏</h3><p>配置 Instagram 或 TikTok 关注用户，首次检查后内容会出现在这里。</p><a href="#settings">前往采集设置</a></div></div>`;
     syncImageGroups(elements.library);
     return;
   }
   const template = document.createElement('template');
   template.innerHTML = library.map(target => {
+    const platform = target.platform || 'instagram', key = target.key || target.name;
+    const profileUrl = platform === 'tiktok' ? `https://www.tiktok.com/@${encodeURIComponent(target.name)}` : `https://www.instagram.com/${encodeURIComponent(target.name)}/`;
     const photos = imageGroupsMarkup(target);
-    const cards = target.items.filter(item => item.files.some(file => file.kind === 'video')).map(item => mediaCard(target.name, item)).join('');
+    const cards = target.items.filter(item => item.files.some(file => file.kind === 'video')).map(item => mediaCard(target, item)).join('');
     const state = target.status.error ? escapeHtml(targetState(target.status)) : `${target.items.length} 条归档`;
-    return `<section class="target-block" data-target-key="${escapeHtml(target.name)}">
-      <div class="target-heading"><h3>@${escapeHtml(target.name)} <span class="rail-state">${state}</span></h3><div class="target-actions"><a href="https://www.instagram.com/${encodeURIComponent(target.name)}/" target="_blank" rel="noreferrer">打开主页</a><button class="delete-button" type="button" data-target="${escapeHtml(target.name)}">删除此用户</button></div></div>
+    return `<section class="target-block" data-target-key="${escapeHtml(key)}" data-platform="${platform}">
+      <div class="target-heading"><h3><span class="platform-name">${platformNames[platform]}</span>@${escapeHtml(target.name)} <span class="rail-state">${state}</span></h3><div class="target-actions"><a href="${profileUrl}" target="_blank" rel="noreferrer">打开主页</a><button class="delete-button" type="button" data-platform="${platform}" data-target="${escapeHtml(target.name)}">删除此用户</button></div></div>
       <div class="media-grid">${photos}${cards}</div>
     </section>`;
   }).join('');
@@ -171,6 +187,9 @@ function targetState(status = {}) {
 }
 
 function applyFilter() {
+  document.querySelectorAll('.target-block').forEach(section => {
+    section.hidden = activePlatform !== 'all' && section.dataset.platform !== activePlatform;
+  });
   document.querySelectorAll('.media-card').forEach(card => {
     card.hidden = activeFilter !== 'all' && card.dataset.kind !== activeFilter;
   });
@@ -178,14 +197,43 @@ function applyFilter() {
 
 function hydrateForm(config) {
   if (hydrated) return;
-  elements.username.value = config.username || '';
-  elements.targets.value = (config.targets || []).join(', ');
+  const selected = selectedPlatform === 'instagram' ? config : config.tiktok || {};
+  elements.username.value = selected.username || '';
+  elements.targets.value = (selected.targets || []).join(', ');
   elements.interval.value = String(config.interval || 300);
   elements.postLimit.value = String(config.post_limit || 12);
-  elements.password.placeholder = config.has_password ? '已保存，留空保持不变' : '输入登录密码';
-  elements.passwordNote.textContent = config.has_password ? '已安全保存，留空保持不变' : '用于建立 Instagram 浏览器会话';
+  elements.password.placeholder = selected.has_password ? '已保存，留空保持不变' : '输入登录密码';
+  elements.passwordNote.textContent = selected.has_password ? '已保存，留空保持不变' : `用于建立 ${platformNames[selectedPlatform]} 浏览器会话`;
+  elements.loginMethod.value = selected.login_method || 'password';
+  elements.cookie.placeholder = selected.has_cookie ? '已保存，留空保持不变' : 'sessionid=...; sessionid_ss=...';
+  updateLoginFields();
   hydrated = true;
 }
+
+function updateLoginFields() {
+  const tiktok = selectedPlatform === 'tiktok', cookie = tiktok && elements.loginMethod.value === 'cookie';
+  document.querySelector('#account-label').textContent = `${platformNames[selectedPlatform]} 账号`;
+  document.querySelector('#password-label').textContent = `${platformNames[selectedPlatform]} 密码`;
+  document.querySelector('#login-method-field').hidden = !tiktok;
+  document.querySelector('#cookie-field').hidden = !cookie;
+  document.querySelector('#public-note').hidden = !tiktok || cookie;
+  elements.username.closest('label').hidden = cookie;
+  elements.password.closest('label').hidden = cookie;
+  elements.username.required = !tiktok;
+  elements.username.placeholder = tiktok ? '邮箱或用户名' : '手机号、邮箱或用户名';
+  document.querySelector('#reset-session').textContent = `重置 ${platformNames[selectedPlatform]} 会话`;
+  renderStatus(lastState?.status || {});
+}
+
+elements.platform.addEventListener('change', () => {
+  selectedPlatform = elements.platform.value;
+  hydrated = false;
+  elements.password.value = elements.cookie.value = '';
+  if (lastState?.config) hydrateForm(lastState.config);
+  else updateLoginFields();
+  renderStatus(lastState?.status || {});
+});
+elements.loginMethod.addEventListener('change', updateLoginFields);
 
 async function refresh(includeLibrary = true) {
   try {
@@ -225,6 +273,14 @@ document.querySelectorAll('.filter').forEach(button => button.addEventListener('
   activeFilter = button.dataset.filter;
   applyFilter();
 }));
+document.querySelectorAll('.platform-filter').forEach(button => button.addEventListener('click', () => {
+  document.querySelectorAll('.platform-filter').forEach(item => {
+    item.classList.toggle('active', item === button);
+    item.setAttribute('aria-pressed', String(item === button));
+  });
+  activePlatform = button.dataset.platform;
+  applyFilter();
+}));
 
 document.querySelector('#run-now').addEventListener('click', event => runNow(event.currentTarget));
 document.querySelector('#mobile-run').addEventListener('click', event => runNow(event.currentTarget));
@@ -234,11 +290,13 @@ elements.library.addEventListener('click', async event => {
   if (!button) return;
   const target = button.dataset.target;
   const item = button.dataset.item;
+  const platform = button.dataset.platform || 'instagram';
   const label = item ? '删除这条内容及其文件？' : `删除 @${target} 的全部截图和归档？`;
   if (!confirm(label)) return;
   button.disabled = true;
   try {
-    await api(item ? `/api/targets/${target}/items/${item}` : `/api/targets/${target}`, { method: 'DELETE' });
+    const path = item ? `/api/targets/${target}/items/${item}` : `/api/targets/${target}`;
+    await api(`${path}?platform=${platform}`, { method: 'DELETE' });
     notify(item ? '内容已删除' : '用户记录已删除');
     hydrated = false;
     librarySignature = '';
@@ -258,6 +316,9 @@ elements.form.addEventListener('submit', async event => {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
+        platform: selectedPlatform,
+        login_method: elements.loginMethod.value,
+        cookie: elements.cookie.value,
         username: elements.username.value,
         password: elements.password.value,
         targets: elements.targets.value,
@@ -265,7 +326,8 @@ elements.form.addEventListener('submit', async event => {
         post_limit: Number(elements.postLimit.value),
       }),
     });
-    elements.password.value = '';
+    elements.password.value = elements.cookie.value = '';
+    hydrated = false;
     elements.password.placeholder = '已保存，留空保持不变';
     notify('设置已保存，正在连接');
     setTimeout(refresh, 900);
@@ -278,7 +340,7 @@ elements.form.addEventListener('submit', async event => {
 
 document.querySelector('#reset-session').addEventListener('click', async () => {
   try {
-    await api('/api/reset-session', { method: 'POST' });
+    await api(`/api/reset-session?platform=${selectedPlatform}`, { method: 'POST' });
     notify('旧会话将在下一轮清除');
   } catch (error) {
     notify(error.message);
@@ -289,7 +351,7 @@ document.querySelector('#submit-verification').addEventListener('click', async e
   const button = event.currentTarget;
   button.disabled = true;
   try {
-    await api('/api/verification', {
+    await api(`/api/verification?platform=${selectedPlatform}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ code: elements.verificationCode.value }),

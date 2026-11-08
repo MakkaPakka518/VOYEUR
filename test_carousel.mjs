@@ -13,9 +13,12 @@ await mkdir(artifacts, { recursive: true });
 const colors = ['#d23c41', '#235dc8', '#248358', '#9a53bb'];
 const requests = [];
 let revision = 0;
+let includeTikTok = false;
 const fixture = () => ({
   config: { targets: ['demo'], username: 'demo', has_password: true, interval: 300, post_limit: 12 },
-  status: { state: 'ready', checked_at: '2026-11-08T10:00:00Z' },
+  status: { state: 'ready', checked_at: '2026-11-08T10:00:00Z', ...(includeTikTok ? { platforms: {
+    instagram: { state: 'ready' }, tiktok: { state: 'error', error_code: 'verification_required' },
+  }} : {}) },
   library: [{ name: 'demo', status: { checked_at: `revision-${revision}` }, latest: '/photo/3.svg',
     items: Array.from({ length: 14 }, (_, i) => ({
       id: `post-${i}`, caption: `归档照片 ${i + 1}`, captured_at: '2026-11-08T10:00:00Z',
@@ -24,7 +27,11 @@ const fixture = () => ({
         { name: 'page.png', kind: 'image', url: `/photo/${(i + 1) % 4}.svg` },
         ...(i === 0 ? [{ name: 'media-02.mp4', kind: 'video', url: '/video.mp4' }] : [])],
     })),
-  }],
+  }, ...(includeTikTok ? [{ name: 'demo', key: 'tiktok:demo', platform: 'tiktok', status: {}, latest: '/photo/1.svg', items: [{
+    id: 'tk-123', caption: 'TikTok 图文和视频', captured_at: '2026-11-08T10:00:00Z', source_url: 'https://www.tiktok.com/@demo/photo/123',
+    files: [{ name: 'media-01.jpg', kind: 'image', url: '/photo/1.svg' }, { name: 'media-02.jpg', kind: 'image', url: '/photo/2.svg' },
+      { name: 'media-03.mp4', kind: 'video', url: '/video.mp4' }],
+  }] }] : [])],
 });
 const server = createServer(async (req, res) => {
   const url = new URL(req.url, 'http://localhost');
@@ -34,7 +41,9 @@ const server = createServer(async (req, res) => {
     return;
   }
   if (url.pathname.startsWith('/api/')) {
-    requests.push([req.method, url.pathname]);
+    let raw = '';
+    for await (const chunk of req) raw += chunk;
+    requests.push([req.method, url.pathname, raw ? JSON.parse(raw) : null, url.search]);
     res.setHeader('Content-Type', 'application/json');
     res.end('{"ok":true}');
     return;
@@ -315,6 +324,52 @@ try {
   assert.equal(await panel.locator('.media-card[data-kind="video"]:visible').count(), 1);
   await panel.getByRole('button', { name: '截图', exact: true }).click();
   assert.equal(await panel.locator('.photo-carousel-card[data-kind="screenshot"]:visible').count(), 2);
+
+  // Both platforms share the viewer, but keep same-name targets and actions separate.
+  includeTikTok = true;
+  await panel.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
+  const tk = panel.locator('.target-block[data-platform="tiktok"]');
+  await tk.waitFor();
+  await panel.getByRole('button', { name: 'TikTok', exact: true }).click();
+  await panel.getByRole('button', { name: '图片', exact: true }).click();
+  assert.equal(await panel.locator('.target-block[data-platform="instagram"]:visible').count(), 0);
+  const tkCard = tk.locator('.photo-carousel-card[data-kind="image"]');
+  await tkCard.scrollIntoViewIfNeeded();
+  await tkCard.locator('.ib-scene[data-ready="true"]').waitFor();
+  await clickSide(tkCard.locator('.ib-photo'), 'left');
+  await tkCard.locator('.ib-scene[data-index="1"][data-animating="false"]').waitFor();
+  assert.equal(await tkCard.locator('.delete-button').getAttribute('data-platform'), 'tiktok');
+  await tkCard.locator('.delete-button').click();
+  await panel.waitForTimeout(100);
+  assert(requests.some(([method, path, , search]) => method === 'DELETE' && path === '/api/targets/demo/items/tk-123' && search === '?platform=tiktok'));
+  assert.equal(await tk.locator('.target-actions a').getAttribute('href'), 'https://www.tiktok.com/@demo');
+  await panel.locator('#settings-platform').selectOption('tiktok');
+  assert(await panel.getByText('TikTok 账号', { exact: true }).isVisible());
+  assert(await panel.getByText('输入 TikTok 验证码', { exact: true }).isVisible());
+  await panel.locator('#verification-code').fill('123456');
+  await panel.locator('#submit-verification').click();
+  assert(requests.some(([method, path, body, search]) => method === 'POST' && path === '/api/verification' && search === '?platform=tiktok' && body.code === '123456'));
+  await panel.locator('#login-method').selectOption('cookie');
+  assert(await panel.locator('#cookie-field').isVisible());
+  assert(await panel.locator('#verification-panel').isHidden());
+  assert(await panel.locator('#ig-username').isHidden());
+  await panel.locator('#ig-targets').fill('demo');
+  await panel.locator('#tiktok-cookie').fill('sessionid=fixture-session');
+  await panel.getByRole('button', { name: '保存并连接', exact: true }).click();
+  assert(requests.some(([method, path, body]) => method === 'POST' && path === '/api/config' && body.platform === 'tiktok' && body.login_method === 'cookie' && body.cookie === 'sessionid=fixture-session'));
+  await panel.waitForFunction(() => document.querySelector('#tiktok-cookie').value === '');
+  await panel.locator('#reset-session').click();
+  assert(requests.some(([method, path, , search]) => method === 'POST' && path === '/api/reset-session' && search === '?platform=tiktok'));
+  for (const width of [375, 768, 1440]) {
+    await panel.setViewportSize({ width, height: 1000 });
+    await panel.locator('#login-method').selectOption('cookie');
+    await panel.locator('#settings').scrollIntoViewIfNeeded();
+    assert(await panel.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
+    await panel.screenshot({ path: `${artifacts}/tiktok-settings-${width}.png` });
+  }
+  await panel.locator('#settings-platform').selectOption('instagram');
+  assert.equal(await panel.locator('#ig-username').inputValue(), 'demo');
+  assert(await panel.locator('#cookie-field').isHidden());
   await panel.close();
   assert.deepEqual(errors, []);
   console.log(`PASS: WebGL/2D ink masks, interruption, keyboard/touch, failure/races, visibility, reduced motion, context recovery, cleanup, gallery actions and 375/768/1440 layouts. Screenshots: ${artifacts}`);

@@ -71,6 +71,11 @@
               <button class="filter" type="button" data-filter="screenshot" aria-pressed="false">截图</button>
             </div>
           </div>
+          <div class="filter-group library-platforms" role="group" aria-label="平台筛选">
+            <button class="platform-filter active" type="button" data-platform="all" aria-pressed="true">所有平台</button>
+            <button class="platform-filter" type="button" data-platform="instagram" aria-pressed="false">Instagram</button>
+            <button class="platform-filter" type="button" data-platform="tiktok" aria-pressed="false">TikTok</button>
+          </div>
           <div id="library-content" class="library-content">
             <div class="loading-grid" aria-label="加载媒体">
               <span></span><span></span><span></span>
@@ -84,9 +89,17 @@
             <p>凭据只保存在这台 VPS。成功登录后会复用浏览器会话。</p>
           </div>
           <form id="settings-form" class="settings-form">
+            <label class="wide-field">
+              <span>配置平台</span>
+              <select id="settings-platform"><option value="instagram">Instagram</option><option value="tiktok">TikTok</option></select>
+            </label>
+            <label id="login-method-field" class="wide-field" hidden>
+              <span>TikTok 登录方式</span>
+              <select id="login-method"><option value="password">账号密码</option><option value="cookie">导入 Cookie</option></select>
+            </label>
             <div id="verification-panel" class="verification-panel wide-field" hidden>
               <div>
-                <strong>输入 Instagram 验证码</strong>
+                <strong id="verification-title">输入 Instagram 验证码</strong>
                 <p>填写短信、邮箱或验证器收到的代码，采集器会继续当前登录。</p>
               </div>
               <label>
@@ -96,14 +109,20 @@
               <button class="primary-button" id="submit-verification" type="button">提交验证码</button>
             </div>
             <label>
-              <span>Instagram 账号</span>
+              <span id="account-label">Instagram 账号</span>
               <input id="ig-username" name="username" required autocomplete="username" placeholder="手机号、邮箱或用户名">
             </label>
             <label>
-              <span>Instagram 密码</span>
+              <span id="password-label">Instagram 密码</span>
               <input id="ig-password" name="password" type="password" autocomplete="current-password" placeholder="输入登录密码">
               <small id="password-note">留空则保留已保存的密码</small>
             </label>
+            <label id="cookie-field" class="wide-field" hidden>
+              <span>TikTok Cookie</span>
+              <input id="tiktok-cookie" type="password" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="sessionid=...; sessionid_ss=...">
+              <small id="cookie-note">从已登录 TikTok 的浏览器网络请求中复制 Cookie 请求头的值。</small>
+            </label>
+            <p id="public-note" class="wide-field settings-note" hidden>采集公开 TikTok 账号时，账号和密码可以都留空。</p>
             <label class="wide-field">
               <span>关注用户</span>
               <input id="ig-targets" name="targets" required placeholder="例如 instagram, natgeo" autocapitalize="none" spellcheck="false">
@@ -128,7 +147,7 @@
             </label>
             <div class="form-actions wide-field">
               <button class="primary-button" type="submit">保存并连接</button>
-              <button class="secondary-button" id="reset-session" type="button">重置 IG 会话</button>
+              <button class="secondary-button" id="reset-session" type="button">重置 Instagram 会话</button>
             </div>
           </form>
         </section>

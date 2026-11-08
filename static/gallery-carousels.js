@@ -27,7 +27,7 @@ function details(group, index) {
       <a href="${escapeHtml(photo.url)}" target="_blank" rel="noreferrer">查看原图</a>
       <a href="${escapeHtml(photo.url)}${photo.url.includes('?') ? '&' : '?'}download=1">下载</a>
       ${photo.item?.source_url ? `<a href="${escapeHtml(photo.item.source_url)}" target="_blank" rel="noreferrer">原帖</a>` : ''}
-      ${photo.item ? `<button class="delete-button" type="button" data-target="${escapeHtml(group.target)}" data-item="${escapeHtml(photo.item.id)}">删除此帖</button>` : ''}
+      ${photo.item ? `<button class="delete-button" type="button" data-platform="${group.platform}" data-target="${escapeHtml(group.target)}" data-item="${escapeHtml(photo.item.id)}">删除此帖</button>` : ''}
     </div>`;
 }
 
@@ -54,8 +54,8 @@ export function imageGroupsMarkup(target) {
   let markup = '';
   for (const [kind, collection] of [['image', photos], ['screenshot', screenshots]]) {
     for (let offset = 0; offset < collection.length; offset += 12) {
-      const key = `${target.name}:${kind}:${offset / 12}`;
-      const group = { target: target.name, photos: collection.slice(offset, offset + 12) };
+      const key = `${target.key || target.name}:${kind}:${offset / 12}`;
+      const group = { target: target.name, platform: target.platform || 'instagram', photos: collection.slice(offset, offset + 12) };
       groups.set(key, group);
       markup += `<article class="media-card photo-carousel-card" data-kind="${kind}" data-media-key="${escapeHtml(key)}" data-signature="${escapeHtml(JSON.stringify(group))}">
         <div class="photo-carousel-host"><img class="photo-placeholder" src="${escapeHtml(group.photos[0].url)}" alt="${escapeHtml(group.photos[0].alt)}" loading="lazy"></div>
