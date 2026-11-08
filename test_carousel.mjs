@@ -13,11 +13,14 @@ await mkdir(artifacts, { recursive: true });
 const colors = ['#d23c41', '#235dc8', '#248358', '#9a53bb'];
 const requests = [];
 let revision = 0;
-let includeTikTok = false;
+let includePlatforms = false;
 const fixture = () => ({
-  config: { targets: ['demo'], username: 'demo', has_password: true, interval: 300, post_limit: 12 },
-  status: { state: 'ready', checked_at: '2026-11-08T10:00:00Z', ...(includeTikTok ? { platforms: {
-    instagram: { state: 'ready' }, tiktok: { state: 'error', error_code: 'verification_required' },
+  config: { targets: ['demo'], username: 'demo', has_password: true, interval: 300, post_limit: 12, ...(includePlatforms ? {
+    tiktok: { targets: ['demo'], username: 'demo', has_password: true, login_method: 'password' },
+    threads: { targets: ['demo'], username: '', has_password: false, login_method: 'password' },
+  } : {}) },
+  status: { state: 'ready', checked_at: '2026-11-08T10:00:00Z', ...(includePlatforms ? { platforms: {
+    instagram: { state: 'ready' }, tiktok: { state: 'error', error_code: 'verification_required' }, threads: { state: 'ready' },
   }} : {}) },
   library: [{ name: 'demo', status: { checked_at: `revision-${revision}` }, latest: '/files/photo/3.svg',
     items: Array.from({ length: 14 }, (_, i) => ({
@@ -27,10 +30,16 @@ const fixture = () => ({
         { name: 'page.png', kind: 'image', url: `/files/photo/${(i + 1) % 4}.svg` },
         ...(i === 0 ? [{ name: 'media-02.mp4', kind: 'video', url: '/files/video.mp4' }] : [])],
     })),
-  }, ...(includeTikTok ? [{ name: 'demo', key: 'tiktok:demo', platform: 'tiktok', status: {}, latest: '/files/photo/1.svg', items: [{
+  }, ...(includePlatforms ? [{ name: 'demo', key: 'tiktok:demo', platform: 'tiktok', status: {}, latest: '/files/photo/1.svg', items: [{
     id: 'tk-123', caption: 'TikTok 图文和视频', captured_at: '2026-11-08T10:00:00Z', source_url: 'https://www.tiktok.com/@demo/photo/123',
     files: [{ name: 'media-01.jpg', kind: 'image', url: '/files/photo/1.svg' }, { name: 'media-02.jpg', kind: 'image', url: '/files/photo/2.svg' },
       { name: 'media-03.mp4', kind: 'video', url: '/files/video.mp4' }],
+  }] }, { name: 'demo', key: 'threads:demo', platform: 'threads', status: {}, latest: '/files/photo/2.svg', items: [{
+    id: 'th-text', caption: '這是一則沒有圖片或影片的 Threads 純文字貼文。', captured_at: '2026-11-08T10:00:00Z', source_url: 'https://www.threads.com/@demo/post/text',
+    files: [{ name: 'page.png', kind: 'image', url: '/files/photo/3.svg' }, { name: 'content.txt', kind: 'text', url: '/files/text/content.txt' }],
+  }, {
+    id: 'th-photo', caption: 'Threads 圖片貼文', captured_at: '2026-11-08T09:00:00Z', source_url: 'https://www.threads.com/@demo/post/photo',
+    files: [{ name: 'media-01.jpg', kind: 'image', url: '/files/photo/0.svg' }, { name: 'page.png', kind: 'image', url: '/files/photo/1.svg' }],
   }] }] : [])],
 });
 const server = createServer(async (req, res) => {
@@ -54,13 +63,18 @@ const server = createServer(async (req, res) => {
     res.end(`<svg xmlns="http://www.w3.org/2000/svg" width="600" height="800"><path fill="${colors[Number(photoMatch[1])]}" d="M0 0h600v800H0z"/></svg>`);
     return;
   }
+  if (url.pathname === '/files/text/content.txt') {
+    res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+    res.end('這是一則沒有圖片或影片的 Threads 純文字貼文。');
+    return;
+  }
   if (url.pathname === '/component') {
     res.setHeader('Content-Type', 'text/html');
     res.end('<!doctype html><html lang="zh-CN"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>Carousel test</title><style>body{margin:0;background:#eaeaea}#demo,#second{max-width:940px;margin:auto}</style><div id="demo"></div><div id="second"></div></html>');
     return;
   }
   try {
-    const path = url.pathname === '/login' ? '/static/login.html' : ['/', '/instagram', '/tiktok', '/settings'].includes(url.pathname) ? '/static/index.html' : url.pathname;
+    const path = url.pathname === '/login' ? '/static/login.html' : ['/', '/instagram', '/tiktok', '/threads', '/settings'].includes(url.pathname) ? '/static/index.html' : url.pathname;
     if (!path.startsWith('/static/') || path.includes('..')) throw new Error('Not found');
     res.setHeader('Content-Type', ({ '.js': 'text/javascript', '.css': 'text/css', '.html': 'text/html', '.svg': 'image/svg+xml' })[extname(path)] || 'application/octet-stream');
     res.end(await readFile(join(root, path)));
@@ -403,7 +417,7 @@ try {
   assert.equal(await panel.locator('.photo-carousel-card[data-kind="screenshot"]:visible').count(), 2);
 
   // Both platforms share the viewer, but keep same-name targets and actions separate.
-  includeTikTok = true;
+  includePlatforms = true;
   await panel.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
   const tk = panel.locator('.target-block[data-platform="tiktok"]');
   await tk.waitFor();
@@ -421,11 +435,31 @@ try {
   await panel.waitForTimeout(100);
   assert(requests.some(([method, path, , search]) => method === 'DELETE' && path === '/api/targets/demo/items/tk-123' && search === '?platform=tiktok'));
   assert.equal(await tk.locator('.target-actions a').getAttribute('href'), 'https://www.tiktok.com/@demo');
+  const th = panel.locator('.target-block[data-platform="threads"]');
+  await navigate(panel, '/threads');
+  await th.waitFor();
+  assert.equal(await panel.locator('#page-title').innerText(), 'Threads');
+  assert.equal(await panel.locator('.target-block[data-platform="instagram"]:visible').count(), 0);
+  assert.equal(await th.locator('.target-actions a').getAttribute('href'), 'https://www.threads.com/@demo');
+  await panel.getByRole('button', { name: '文字', exact: true }).click();
+  const textCard = th.locator('.text-card');
+  await textCard.waitFor();
+  assert.match(await textCard.locator('.text-content').innerText(), /純文字貼文/);
+  assert.equal(await textCard.locator('a', { hasText: '下载文字' }).getAttribute('href'), '/files/text/content.txt?download=1');
+  assert.equal(await textCard.locator('.delete-button').getAttribute('data-platform'), 'threads');
+  for (const width of [375, 768, 1440]) {
+    await panel.setViewportSize({ width, height: 1000 });
+    assert(await panel.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
+    await panel.screenshot({ path: `${artifacts}/threads-text-${width}.png` });
+  }
+  await textCard.locator('.delete-button').click();
+  await panel.waitForTimeout(100);
+  assert(requests.some(([method, path, , search]) => method === 'DELETE' && path === '/api/targets/demo/items/th-text' && search === '?platform=threads'));
   await navigate(panel, '/instagram');
   assert.equal(await tk.isVisible(), false);
   assert.equal(await panel.locator('.target-block[data-platform="instagram"]:visible').count(), 1);
   await navigate(panel, '/');
-  assert.equal(await panel.locator('.target-block:visible').count(), 2);
+  assert.equal(await panel.locator('.target-block:visible').count(), 3);
   await navigate(panel, '/settings');
   assert(await panel.locator('#library').isHidden());
   assert.equal(await panel.locator('.settings-group[open]').count(), 0);
@@ -455,6 +489,17 @@ try {
     assert(await panel.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
     await panel.screenshot({ path: `${artifacts}/tiktok-settings-${width}.png` });
   }
+  await panel.locator('#settings-platform').selectOption('threads');
+  assert(await panel.getByText('Threads 账号', { exact: true }).isVisible());
+  assert.equal(await panel.locator('#login-method-label').innerText(), 'Threads 登录方式');
+  assert.equal(await panel.locator('#ig-targets').inputValue(), 'demo');
+  await panel.locator('#login-method').selectOption('cookie');
+  assert.equal(await panel.locator('#cookie-label').innerText(), 'Threads Cookie');
+  await panel.locator('#tiktok-cookie').fill('sessionid=threads-fixture');
+  await panel.getByRole('button', { name: '保存并连接', exact: true }).click();
+  assert(requests.some(([method, path, body]) => method === 'POST' && path === '/api/config' && body.platform === 'threads' && body.login_method === 'cookie' && body.cookie === 'sessionid=threads-fixture'));
+  await panel.locator('#reset-session').click();
+  assert(requests.some(([method, path, , search]) => method === 'POST' && path === '/api/reset-session' && search === '?platform=threads'));
   await panel.locator('#settings-platform').selectOption('instagram');
   assert.equal(await panel.locator('#ig-username').inputValue(), 'demo');
   assert(await panel.locator('#cookie-field').isHidden());
@@ -517,6 +562,7 @@ try {
   assert(await mobilePreview.locator('#settings-platform').isVisible());
   await mobilePreview.locator('#platform-settings summary').tap();
   assert(await mobilePreview.locator('#settings-platform').isHidden());
+  assert.equal(await mobilePreview.locator('.bottom-nav a').count(), 5);
   await mobilePreview.close();
   const loginPage = await open();
   await loginPage.goto(base);

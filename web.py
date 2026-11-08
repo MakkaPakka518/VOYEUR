@@ -81,6 +81,7 @@ def logout():
 @app.get("/")
 @app.get("/instagram")
 @app.get("/tiktok")
+@app.get("/threads")
 @app.get("/settings")
 def index():
     return FileResponse(ROOT / "static" / "index.html")
@@ -99,7 +100,7 @@ def platform_library(platform):
         target = {
             "name": target_dir.name,
             "platform": platform,
-            "key": target_dir.name if platform == "instagram" else f"tiktok:{target_dir.name}",
+            "key": target_dir.name if platform == "instagram" else f"{platform}:{target_dir.name}",
             "status": read_json(target_dir / "status.json", {}),
             "latest": file_url(target_dir / "latest.png") if (target_dir / "latest.png").exists() else None,
             "items": [],
@@ -110,9 +111,9 @@ def platform_library(platform):
                 metadata = read_json(item_dir / "metadata.json", {})
                 files = []
                 for path in sorted(item_dir.iterdir()):
-                    if not path.is_file() or path.suffix.lower() not in {".jpg", ".jpeg", ".png", ".webp", ".mp4"}:
+                    if not path.is_file() or path.suffix.lower() not in {".jpg", ".jpeg", ".png", ".webp", ".gif", ".mp4", ".txt"}:
                         continue
-                    kind = "video" if path.suffix.lower() == ".mp4" else "image"
+                    kind = "video" if path.suffix.lower() == ".mp4" else "text" if path.suffix.lower() == ".txt" else "image"
                     files.append({"name": path.name, "kind": kind, "url": file_url(path)})
                 target["items"].append({
                     "id": item_dir.name,
@@ -134,6 +135,7 @@ def library():
 def state(library_data: bool = True):
     config = read_json(CONFIG_PATH, {})
     tiktok = config.get("tiktok", {})
+    threads = config.get("threads", {})
     return {
         "config": {
             "targets": config.get("targets", []),
@@ -142,10 +144,12 @@ def state(library_data: bool = True):
             "interval": config.get("interval", 300),
             "post_limit": config.get("post_limit", 12),
             "tiktok": {"targets": tiktok.get("targets", []), "username": tiktok.get("username", ""), "has_password": bool(tiktok.get("password")), "has_cookie": bool(tiktok.get("cookie")), "login_method": tiktok.get("login_method", "password")},
+            "threads": {"targets": threads.get("targets", []), "username": threads.get("username", ""), "has_password": bool(threads.get("password")), "has_cookie": bool(threads.get("cookie")), "login_method": threads.get("login_method", "password")},
         },
         "status": read_json(STATUS_PATH, {"state": "not_configured"}),
         "login_screenshot": file_url(DATA_DIR / "login-required.png") if (DATA_DIR / "login-required.png").exists() else None,
         "tiktok_login_screenshot": file_url(DATA_DIR / "tiktok" / "login-required.png") if (DATA_DIR / "tiktok" / "login-required.png").exists() else None,
+        "threads_login_screenshot": file_url(DATA_DIR / "threads" / "login-required.png") if (DATA_DIR / "threads" / "login-required.png").exists() else None,
         "library": library() if library_data else None,
     }
 
@@ -159,7 +163,7 @@ async def save_config(request: Request):
     if platform not in PLATFORMS:
         raise HTTPException(400, "未知平台")
     existing = read_json(CONFIG_PATH, {})
-    saved = existing if platform == "instagram" else existing.get("tiktok", {})
+    saved = existing if platform == "instagram" else existing.get(platform, {})
     password = str(payload.get("password", "")) or str(saved.get("password", ""))
     username = str(payload.get("username", "")).strip()
     try:
@@ -173,31 +177,31 @@ async def save_config(request: Request):
     selected = {"targets": targets, "username": username, "password": password}
     if platform == "instagram" and (not username or not password):
         raise HTTPException(400, "请填写 Instagram 账号和密码")
-    if platform == "tiktok":
+    if platform in {"tiktok", "threads"}:
         method = payload.get("login_method", saved.get("login_method", "password"))
         if method not in {"password", "cookie"}:
             raise HTTPException(400, "请选择账号密码或 Cookie 登录")
         cookie = str(payload.get("cookie", "")) or str(saved.get("cookie", ""))
         if method == "cookie":
             try:
-                parse_cookie(cookie)
+                parse_cookie(cookie, f".{platform}.com", "TikTok" if platform == "tiktok" else "Threads")
             except ValueError as error:
                 raise HTTPException(400, str(error)) from error
         elif bool(username) != bool(password):
-            raise HTTPException(400, "请同时填写 TikTok 账号和密码，或都留空采集公开账号")
+            raise HTTPException(400, f"请同时填写{'TikTok' if platform == 'tiktok' else 'Threads'}账号和密码，或都留空采集公开账号")
         selected.update({"login_method": method, "cookie": cookie})
     config = dict(existing)
     if platform == "instagram":
         config.update(selected)
     else:
-        config["tiktok"] = selected
+        config[platform] = selected
     config.update({"interval": interval, "post_limit": post_limit})
     write_json(CONFIG_PATH, config)
     root = platform_dir(DATA_DIR, platform)
     root.mkdir(parents=True, exist_ok=True)
     (root / "login-paused.json").unlink(missing_ok=True)
     changed = saved.get("username") and saved.get("username") != username
-    if platform == "tiktok":
+    if platform in {"tiktok", "threads"}:
         changed = changed or saved.get("login_method") != selected["login_method"] or saved.get("cookie", "") != selected["cookie"]
     if changed:
         (root / "reset-session.trigger").write_text(datetime.now(timezone.utc).isoformat(), encoding="utf-8")

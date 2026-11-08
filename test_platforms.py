@@ -10,6 +10,7 @@ from fastapi.testclient import TestClient
 
 import app
 import tiktok
+import threads
 import web
 from platforms import parse_cookie, read_json, target_list, write_json
 
@@ -39,22 +40,28 @@ class PlatformTests(unittest.TestCase):
     def save_tiktok(self, **options):
         return self.client.post("/api/config", json={"platform": "tiktok", "targets": ["demo"], "username": "tk-account", "password": "tk-secret", **options})
 
+    def save_threads(self, **options):
+        return self.client.post("/api/config", json={"platform": "threads", "targets": ["demo"], "username": "th-account", "password": "th-secret", **options})
+
     def test_config_preserves_instagram_and_hides_both_secrets(self):
         self.assertEqual(self.save_tiktok().status_code, 200)
+        self.assertEqual(self.save_threads().status_code, 200)
         saved = read_json(self.root / "config.json", {})
         self.assertEqual(saved["password"], "ig-secret")
         self.assertEqual(saved["targets"], ["demo"])
         self.assertEqual(saved["tiktok"]["password"], "tk-secret")
+        self.assertEqual(saved["threads"]["password"], "th-secret")
         self.assertEqual((self.root / "config.json").stat().st_mode & 0o777, 0o600)
         response = self.client.get("/api/state").json()
         self.assertTrue(response["config"]["tiktok"]["has_password"])
         self.assertNotIn("ig-secret", str(response))
         self.assertNotIn("tk-secret", str(response))
+        self.assertNotIn("th-secret", str(response))
         self.client.post("/api/config", json={**self.ig, "password": ""})
         self.assertEqual(read_json(self.root / "config.json", {})["tiktok"]["password"], "tk-secret")
 
     def test_separate_pages_are_authenticated_and_directly_loadable(self):
-        for path in ("/", "/instagram", "/tiktok", "/settings"):
+        for path in ("/", "/instagram", "/tiktok", "/threads", "/settings"):
             response = self.client.get(path)
             self.assertEqual(response.status_code, 200)
             self.assertIn("text/html", response.headers["content-type"])
@@ -68,6 +75,10 @@ class PlatformTests(unittest.TestCase):
         self.assertEqual(self.save_tiktok(password="", login_method="cookie", cookie="sessionid=test-session; sessionid_ss=second").status_code, 200)
         config = read_json(self.root / "config.json", {})["tiktok"]
         self.assertEqual(config["password"], "tk-secret")
+        self.assertEqual(self.save_threads(login_method="cookie", cookie="sessionid=threads-session").status_code, 200)
+        state = self.client.get("/api/state").json()
+        self.assertTrue(state["config"]["threads"]["has_cookie"])
+        self.assertNotIn("threads-session", str(state))
         self.assertTrue((self.root / "tiktok/reset-session.trigger").exists())
         state = self.client.get("/api/state").json()
         self.assertTrue(state["config"]["tiktok"]["has_cookie"])
@@ -88,7 +99,7 @@ class PlatformTests(unittest.TestCase):
             parse_cookie("sessionid=test\nvalue")
 
     def test_library_and_deletion_isolate_same_username_and_post_id(self):
-        for folder in (self.root, self.root / "tiktok"):
+        for folder in (self.root, self.root / "tiktok", self.root / "threads"):
             directory = folder / "targets/demo/items/123"
             directory.mkdir(parents=True)
             (directory / "media-01.jpg").write_bytes(b"image")
@@ -96,13 +107,16 @@ class PlatformTests(unittest.TestCase):
             (directory / "ignored.part").write_bytes(b"partial")
             write_json(directory / "metadata.json", {"captured_at": "2026-11-08T00:00:00Z"})
         library = self.client.get("/api/state").json()["library"]
-        self.assertEqual([item["key"] for item in library], ["demo", "tiktok:demo"])
+        self.assertEqual([item["key"] for item in library], ["demo", "tiktok:demo", "threads:demo"])
         self.assertTrue(library[1]["items"][0]["files"][0]["url"].startswith("/files/tiktok/"))
         self.assertEqual(len(library[1]["items"][0]["files"]), 2)
         self.assertEqual(self.client.delete("/api/targets/demo/items/123?platform=tiktok").status_code, 200)
         self.assertTrue((self.root / "targets/demo/items/123/media-01.jpg").exists())
         self.assertEqual(self.client.delete("/api/targets/demo?platform=tiktok").status_code, 200)
         self.assertTrue((self.root / "targets/demo").exists())
+        self.assertTrue((self.root / "threads/targets/demo").exists())
+        self.assertEqual(self.client.delete("/api/targets/demo/items/123?platform=threads").status_code, 200)
+        self.assertTrue((self.root / "targets/demo/items/123/media-01.jpg").exists())
         self.assertEqual(self.client.delete("/api/targets/demo?platform=other").status_code, 404)
         self.assertEqual(self.client.delete("/api/targets/..%2Fdemo").status_code, 404)
 
@@ -118,16 +132,20 @@ class PlatformTests(unittest.TestCase):
 
     def test_tiktok_runs_even_when_instagram_login_fails(self):
         self.save_tiktok()
+        self.save_threads()
         manager = MagicMock()
         with patch.object(app, "sync_playwright", return_value=manager), \
              patch.object(app, "run_cycle", side_effect=app.LoginError("invalid_credentials", "test login failure")), \
              patch.object(app, "run_tiktok_cycle", return_value={"state": "ready", "targets": []}) as run_tiktok, \
+             patch.object(app, "run_threads_cycle", return_value={"state": "ready", "targets": []}) as run_threads, \
              patch.object(sys, "argv", ["app.py", "--once"]):
             app.main()
         run_tiktok.assert_called_once()
+        run_threads.assert_called_once()
         status = read_json(self.root / "status.json", {})
         self.assertEqual(status["platforms"]["instagram"]["state"], "error")
         self.assertEqual(status["platforms"]["tiktok"]["state"], "ready")
+        self.assertEqual(status["platforms"]["threads"]["state"], "ready")
 
     def test_config_trigger_arriving_during_a_cycle_is_not_lost(self):
         (self.root / "run.trigger").write_text("new settings")
@@ -175,6 +193,36 @@ class PlatformTests(unittest.TestCase):
         write_json(directory / "login-paused.json", {"code": "rate_limited"})
         self.assertEqual(self.save_tiktok().status_code, 200)
         self.assertFalse((directory / "login-paused.json").exists())
+
+    def test_threads_parses_media_and_persists_text_only_posts(self):
+        photo = {"code": "photo1", "permalink": "https://www.threads.com/@demo/post/photo1", "user": {"username": "demo"}, "media_type": 1, "image_versions2": {"candidates": [{"url": "https://cdninstagram.com/1.jpg"}]}, "caption": {"text": "photo"}}
+        video = {"code": "video1", "permalink": "https://www.threads.com/@demo/post/video1", "user": {"username": "demo"}, "media_type": 2, "video_versions": [{"url": "https://cdninstagram.com/1.mp4"}], "caption": {"text": "video"}}
+        text = {"code": "text1", "permalink": "https://www.threads.com/@demo/post/text1", "user": {"username": "demo"}, "media_type": 19, "caption": {"text": "纯文字贴文"}}
+        other = {"code": "other1", "permalink": "https://www.threads.com/@other/post/other1", "user": {"username": "other"}}
+        data = {"payload": [{"thread_items": [{"post": photo}, {"post": video}, {"post": text}, {"post": other}]}]}
+        self.assertEqual(set(threads.extract_posts(data, "demo")), {"photo1", "video1", "text1"})
+        self.assertEqual(threads.media_groups(photo)[0][0], "image")
+        self.assertEqual(threads.media_groups(video)[0][0], "video")
+        self.assertEqual(threads.media_groups(text), [])
+        page = MagicMock()
+        page.locator.return_value.get_attribute.return_value = None
+        with patch.object(threads, "page_data", return_value=[data]):
+            result = threads.archive_post(MagicMock(), page, self.root / "threads", "demo", "text1", text)
+        directory = self.root / "threads/targets/demo/items/text1"
+        self.assertEqual(result["media"], [])
+        self.assertEqual((directory / "content.txt").read_text(), "纯文字贴文")
+        self.assertEqual(read_json(directory / "metadata.json", {})["caption"], "纯文字贴文")
+
+    def test_threads_cookie_and_download(self):
+        context = MagicMock()
+        mode = threads.login(context, MagicMock(), {"login_method": "cookie", "cookie": "sessionid=threads-session"}, self.root)
+        self.assertEqual(mode, "cookie")
+        self.assertEqual(context.add_cookies.call_args.args[0][0]["domain"], ".threads.com")
+        response = MagicMock(ok=True, headers={"content-type": "image/webp"})
+        response.body.return_value = b"image contents"
+        context.request.get.return_value = response
+        self.assertEqual(threads.download(context, ["https://cdninstagram.com/1.webp"], "image", self.root, 1, "https://www.threads.com/@demo/post/photo1"), "media-01.webp")
+        self.assertEqual((self.root / "media-01.webp").read_bytes(), b"image contents")
 
 
 if __name__ == "__main__":

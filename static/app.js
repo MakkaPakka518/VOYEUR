@@ -31,13 +31,14 @@ let lastState;
 let librarySignature = '';
 let selectedPlatform = 'instagram';
 let activePlatform = 'all';
-const platformNames = { instagram: 'Instagram', tiktok: 'TikTok' };
+const platformNames = { instagram: 'Instagram', tiktok: 'TikTok', threads: 'Threads' };
 const preview = createMediaPreview(document.querySelector('#media-preview'));
 const themeToggle = createThemeToggle([...document.querySelectorAll('.theme-toggle')]);
 const pages = {
   '/': { title: '全部媒体', platform: 'all' },
   '/instagram': { title: 'Instagram', platform: 'instagram' },
   '/tiktok': { title: 'TikTok', platform: 'tiktok' },
+  '/threads': { title: 'Threads', platform: 'threads' },
   '/settings': { title: '设置', platform: 'all' },
 };
 let currentPage = '';
@@ -85,9 +86,10 @@ function renderStatus(globalStatus = {}) {
     invalid_credentials: ['账号或密码错误', `请在设置中修改 ${brand} 账号或密码后重试`],
     verification_required: ['需要验证码', `输入 ${brand} 发来的验证码以继续登录`],
     invalid_verification: ['验证码错误', '请输入新验证码后再次提交'],
-    manual_verification: ['需要确认登录', statusPlatform === 'tiktok' ? '查看登录截图完成验证，或切换 Cookie 登录' : '按登录截图提示完成 Instagram 安全确认'],
+    manual_verification: ['需要确认登录', statusPlatform !== 'instagram' ? '查看登录截图完成验证，或切换 Cookie 登录' : '按登录截图提示完成 Instagram 安全确认'],
     login_page_changed: ['登录页面已变化', `查看登录截图确认 ${brand} 当前页面`],
     tiktok_blocked: ['TikTok 需要处理', status.error || '请完成登录或更新 Cookie'],
+    threads_blocked: ['Threads 需要处理', status.error || '请完成登录或更新 Cookie'],
     rate_limited: ['TikTok 登录过于频繁', '已暂停密码重试，请改用 Cookie 或更新登录设置后再试'],
   };
   const labels = {
@@ -102,7 +104,7 @@ function renderStatus(globalStatus = {}) {
   elements.statusDetail.textContent = detail;
   elements.statusTime.textContent = formatDate(status.checked_at || status.started_at);
   elements.railState.textContent = title;
-  const screenshot = statusPlatform === 'tiktok' ? lastState?.tiktok_login_screenshot : lastState?.login_screenshot;
+  const screenshot = statusPlatform === 'tiktok' ? lastState?.tiktok_login_screenshot : statusPlatform === 'threads' ? lastState?.threads_login_screenshot : lastState?.login_screenshot;
   elements.statusAction.hidden = !screenshot;
   elements.statusAction.href = screenshot || '#';
   document.querySelector('#verification-title').textContent = `输入 ${platformNames[selectedPlatform]} 验证码`;
@@ -143,24 +145,41 @@ function mediaCard(target, item, snapshot = false) {
     </article>`;
 }
 
+function textCard(target, item) {
+  const platform = target.platform || 'instagram';
+  const textFile = item.files.find(file => file.kind === 'text');
+  return `<article class="media-card text-card" data-kind="text" data-media-key="${escapeHtml(target.key || target.name)}:text:${escapeHtml(item.id)}" data-signature="${escapeHtml(JSON.stringify(item))}">
+    <div class="media-body">
+      <div class="media-title"><span>${escapeHtml(item.id)}</span><time>${formatDate(item.captured_at)}</time></div>
+      <p class="text-content">${escapeHtml(item.caption || '纯文字贴文')}</p>
+      <div class="media-actions">
+        ${item.source_url ? `<a href="${escapeHtml(item.source_url)}" target="_blank" rel="noreferrer">原帖</a>` : ''}
+        ${textFile ? `<a href="${escapeHtml(textFile.url)}?download=1">下载文字</a>` : ''}
+        <button class="delete-button" type="button" data-platform="${platform}" data-target="${escapeHtml(target.name)}" data-item="${escapeHtml(item.id)}">删除</button>
+      </div>
+    </div>
+  </article>`;
+}
+
 function renderLibrary(library) {
   const hasContent = library.some(target => target.latest || target.items.length);
   if (!hasContent) {
     elements.library.innerHTML = `
-      <div class="empty-state"><div><h3>还没有收藏</h3><p>配置 Instagram 或 TikTok 关注用户，首次检查后内容会出现在这里。</p><a href="/settings" data-route>前往采集设置</a></div></div>`;
+      <div class="empty-state"><div><h3>还没有收藏</h3><p>配置 Instagram、TikTok 或 Threads 关注用户，首次检查后内容会出现在这里。</p><a href="/settings" data-route>前往采集设置</a></div></div>`;
     syncImageGroups(elements.library);
     return;
   }
   const template = document.createElement('template');
   template.innerHTML = library.map(target => {
     const platform = target.platform || 'instagram', key = target.key || target.name;
-    const profileUrl = platform === 'tiktok' ? `https://www.tiktok.com/@${encodeURIComponent(target.name)}` : `https://www.instagram.com/${encodeURIComponent(target.name)}/`;
+    const profileUrl = platform === 'tiktok' ? `https://www.tiktok.com/@${encodeURIComponent(target.name)}` : platform === 'threads' ? `https://www.threads.com/@${encodeURIComponent(target.name)}` : `https://www.instagram.com/${encodeURIComponent(target.name)}/`;
     const photos = imageGroupsMarkup(target);
     const cards = target.items.filter(item => item.files.some(file => file.kind === 'video')).map(item => mediaCard(target, item)).join('');
-    const state = target.status.error ? escapeHtml(targetState(target.status)) : `${target.items.length} 条归档`;
+    const textCards = target.items.filter(item => item.files.some(file => file.kind === 'text') && !item.files.some(file => file.kind === 'video' || (file.kind === 'image' && file.name !== 'page.png'))).map(item => textCard(target, item)).join('');
+    const state = target.status.error ? escapeHtml(targetState(target.status)) : target.status.failed_items?.length ? `${target.items.length} 条归档，${target.status.failed_items.length} 条待重试` : `${target.items.length} 条归档`;
     return `<section class="target-block" data-target-key="${escapeHtml(key)}" data-platform="${platform}">
       <div class="target-heading"><h3><span class="platform-name"><svg class="platform-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="/static/icons/platforms.svg#${platform}"/></svg>${platformNames[platform]}</span>@${escapeHtml(target.name)} <span class="rail-state">${state}</span></h3><div class="target-actions"><a href="${profileUrl}" target="_blank" rel="noreferrer">打开主页</a><button class="delete-button" type="button" data-platform="${platform}" data-target="${escapeHtml(target.name)}">删除此用户</button></div></div>
-      <div class="media-grid">${photos}${cards}</div>
+      <div class="media-grid">${photos}${cards}${textCards}</div>
     </section>`;
   }).join('');
   // Keep live canvases, focus and video playback intact during status polling.
@@ -214,7 +233,7 @@ function applyFilter() {
 
 function hydrateForm(config) {
   if (hydrated) return;
-  const selected = selectedPlatform === 'instagram' ? config : config.tiktok || {};
+  const selected = selectedPlatform === 'instagram' ? config : config[selectedPlatform] || {};
   elements.username.value = selected.username || '';
   elements.targets.value = (selected.targets || []).join(', ');
   elements.interval.value = String(config.interval || 300);
@@ -229,16 +248,20 @@ function hydrateForm(config) {
 }
 
 function updateLoginFields() {
-  const tiktok = selectedPlatform === 'tiktok', cookie = tiktok && elements.loginMethod.value === 'cookie';
+  const external = selectedPlatform !== 'instagram', cookie = external && elements.loginMethod.value === 'cookie';
   document.querySelector('#account-label').textContent = `${platformNames[selectedPlatform]} 账号`;
   document.querySelector('#password-label').textContent = `${platformNames[selectedPlatform]} 密码`;
-  document.querySelector('#login-method-field').hidden = !tiktok;
+  document.querySelector('#login-method-field').hidden = !external;
+  document.querySelector('#login-method-label').textContent = `${platformNames[selectedPlatform]} 登录方式`;
   document.querySelector('#cookie-field').hidden = !cookie;
-  document.querySelector('#public-note').hidden = !tiktok || cookie;
+  document.querySelector('#cookie-label').textContent = `${platformNames[selectedPlatform]} Cookie`;
+  document.querySelector('#cookie-note').textContent = `从已登录 ${platformNames[selectedPlatform]} 的浏览器网络请求中复制 Cookie 请求头的值。`;
+  document.querySelector('#public-note').hidden = !external || cookie;
+  document.querySelector('#public-note').textContent = `采集公开 ${platformNames[selectedPlatform]} 账号时，账号和密码可以都留空。`;
   elements.username.closest('label').hidden = cookie;
   elements.password.closest('label').hidden = cookie;
-  elements.username.required = !tiktok;
-  elements.username.placeholder = tiktok ? '邮箱或用户名' : '手机号、邮箱或用户名';
+  elements.username.required = !external;
+  elements.username.placeholder = external ? '邮箱或用户名' : '手机号、邮箱或用户名';
   document.querySelector('#reset-session').textContent = `重置 ${platformNames[selectedPlatform]} 会话`;
   document.querySelector('#platform-summary').textContent = platformNames[selectedPlatform];
   renderStatus(lastState?.status || {});

@@ -13,6 +13,7 @@ from playwright.sync_api import sync_playwright
 
 from platforms import read_json, write_json, target_list
 from tiktok import run_cycle as run_tiktok_cycle
+from threads import run_cycle as run_threads_cycle
 
 
 DATA_DIR = Path(os.getenv("DATA_DIR", "/data"))
@@ -38,6 +39,8 @@ def load_config():
     targets = target_list(saved.get("targets", []))
     tiktok = dict(saved.get("tiktok", {}))
     tiktok["targets"] = target_list(tiktok.get("targets", []))
+    threads = dict(saved.get("threads", {}))
+    threads["targets"] = target_list(threads.get("targets", []))
     return {
         "targets": targets,
         "username": str(saved.get("username", "")),
@@ -45,6 +48,7 @@ def load_config():
         "interval": max(60, min(86_400, int(saved.get("interval", 300)))),
         "post_limit": max(1, min(24, int(saved.get("post_limit", 12)))),
         "tiktok": tiktok,
+        "threads": threads,
     }
 
 
@@ -325,7 +329,7 @@ def main():
                     break
                 wait_for_trigger(30, trigger)
                 continue
-            if not config["targets"] and not config["tiktok"]["targets"]:
+            if not config["targets"] and not config["tiktok"]["targets"] and not config["threads"]["targets"]:
                 write_json(STATUS_PATH, {
                     "state": "not_configured",
                     "checked_at": now(),
@@ -335,7 +339,7 @@ def main():
                 continue
             previous = read_json(STATUS_PATH, {})
             statuses = previous.get("platforms", {"instagram": previous})
-            for platform, selected in (("instagram", config), ("tiktok", config["tiktok"])):
+            for platform, selected in (("instagram", config), ("tiktok", config["tiktok"]), ("threads", config["threads"])):
                 if not selected["targets"]:
                     statuses[platform] = {"state": "not_configured"}
                     continue
@@ -347,8 +351,10 @@ def main():
                             shutil.rmtree(DATA_DIR / "profile", ignore_errors=True)
                             RESET_PATH.unlink()
                         statuses[platform] = run_cycle(playwright, config, seen)
-                    else:
+                    elif platform == "tiktok":
                         statuses[platform] = run_tiktok_cycle(playwright, selected, DATA_DIR / "tiktok", config["post_limit"])
+                    else:
+                        statuses[platform] = run_threads_cycle(playwright, selected, DATA_DIR / "threads", config["post_limit"])
                 except Exception as error:
                     statuses[platform] = {"state": "error", "checked_at": now(), "error": str(error), "error_code": getattr(error, "code", "collection_failed")}
                     print(f"{platform}: {error}", flush=True)

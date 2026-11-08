@@ -3,7 +3,7 @@ import re
 from pathlib import Path
 
 
-PLATFORMS = ("instagram", "tiktok")
+PLATFORMS = ("instagram", "tiktok", "threads")
 USERNAME_RE = re.compile(r"^[a-z0-9._]+$")
 
 
@@ -25,7 +25,7 @@ def target_list(value):
 def platform_dir(data_dir, platform):
     if platform not in PLATFORMS:
         raise ValueError("未知平台")
-    return Path(data_dir) if platform == "instagram" else Path(data_dir) / "tiktok"
+    return Path(data_dir) if platform == "instagram" else Path(data_dir) / platform
 
 
 def read_json(path, default):
@@ -43,9 +43,9 @@ def write_json(path, value):
     temporary.replace(path)
 
 
-def parse_cookie(value):
+def parse_cookie(value, domain=".tiktok.com", label="TikTok"):
     if not isinstance(value, str) or len(value) > 65_536 or re.search(r"[\x00-\x1f\x7f]", value):
-        raise ValueError("请输入浏览器请求头中的 TikTok Cookie")
+        raise ValueError(f"请输入浏览器请求头中的 {label} Cookie")
     result = []
     for part in value.strip().split(";"):
         if not part.strip():
@@ -53,7 +53,7 @@ def parse_cookie(value):
         name, separator, content = part.strip().partition("=")
         if not separator or not re.fullmatch(r"[A-Za-z0-9_~-]+", name) or not content:
             raise ValueError("Cookie 格式应为 name=value; name=value")
-        result.append({"name": name, "value": content, "domain": ".tiktok.com", "path": "/", "secure": True})
+        result.append({"name": name, "value": content, "domain": domain, "path": "/", "secure": True})
     if not result:
-        raise ValueError("请输入 TikTok Cookie")
+        raise ValueError(f"请输入 {label} Cookie")
     return result
