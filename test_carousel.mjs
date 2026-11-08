@@ -569,6 +569,10 @@ try {
   assert(await panel.locator('#ig-username').isHidden());
   assert.equal(await panel.locator('#ig-targets').inputValue(), 'MS4wLjAB_Test-ID');
   assert.match(await panel.locator('#ig-targets').getAttribute('placeholder'), /主页链接/);
+  await panel.locator('#login-method').selectOption('phone');
+  assert(await panel.locator('#ig-username').isVisible());
+  assert(await panel.locator('#ig-password').isHidden());
+  assert.match(await panel.locator('#ig-username').getAttribute('placeholder'), /11 位手机号/);
   await panel.locator('#login-method').selectOption('qrcode');
   assert(await panel.locator('#cookie-field').isHidden());
   assert.match(await panel.locator('#public-note').innerText(), /存储到照片/);

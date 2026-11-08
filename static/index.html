@@ -54,7 +54,7 @@
               <div class="settings-fields">
                 <label class="wide-field"><span>配置平台</span><select id="settings-platform"><option value="instagram">Instagram</option><option value="tiktok">TikTok</option><option value="douyin">抖音</option><option value="threads">Threads</option><option value="x">X</option></select></label>
                 <label class="platform-enabled-field wide-field"><span><strong>启用此平台</strong><small>关闭后停止采集，并从手机底栏隐藏</small></span><input id="platform-enabled" type="checkbox" role="switch" checked></label>
-                <label id="login-method-field" class="wide-field" hidden><span id="login-method-label">TikTok 登录方式</span><select id="login-method"><option value="password">账号密码</option><option value="cookie">导入 Cookie</option><option value="qrcode" hidden disabled>二维码登录</option></select></label>
+                <label id="login-method-field" class="wide-field" hidden><span id="login-method-label">TikTok 登录方式</span><select id="login-method"><option value="password">账号密码</option><option value="cookie">导入 Cookie</option><option value="qrcode" hidden disabled>二维码登录</option><option value="phone" hidden disabled>手机号登录</option></select></label>
                 <div id="verification-panel" class="verification-panel wide-field" hidden>
                   <div><strong id="verification-title">输入 Instagram 验证码</strong><p>填写短信、邮箱或验证器收到的代码，采集器会继续当前登录。</p></div>
                   <label><span>验证码</span><input id="verification-code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]*" maxlength="10" placeholder="输入验证码"></label>

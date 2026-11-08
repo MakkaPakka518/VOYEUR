@@ -353,7 +353,7 @@ def main():
             previous = read_json(STATUS_PATH, {})
             statuses = previous.get("platforms", {"instagram": previous})
             entries = (("instagram", config), ("tiktok", config["tiktok"]), ("threads", config["threads"]), ("x", config["x"]), ("douyin", config["douyin"]))
-            if config["douyin"].get("login_method") == "qrcode" and config["douyin"]["enabled"]:
+            if config["douyin"].get("login_method") in {"qrcode", "phone"} and config["douyin"]["enabled"]:
                 entries = (entries[-1], *entries[:-1])
             current_time = time.monotonic()
             for platform, selected in entries:

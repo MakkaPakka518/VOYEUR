@@ -96,6 +96,8 @@ function renderStatus(globalStatus = {}) {
     threads_blocked: ['Threads 需要处理', status.error || '请完成登录或更新 Cookie'],
     x_blocked: ['X 需要处理', status.error || '请完成登录或更新 Cookie'],
     douyin_blocked: ['抖音需要处理', status.error || '请更新 Cookie 或完成验证'],
+    sms_send_failed: ['短信发送失败', status.error || '请检查手机号后重试'],
+    sms_login_required: ['验证码已超时', '重新保存手机号以发送新的验证码'],
     rate_limited: [`${brand} 请求过于频繁`, status.error || '请稍后重试或更新 Cookie'],
   };
   const labels = {
@@ -112,6 +114,11 @@ function renderStatus(globalStatus = {}) {
     title = qrState === 'scanned' ? '已扫码' : qrState === 'confirming' ? '正在完成登录' : '等待扫码';
     detail = qrState === 'scanned' ? '请在抖音 App 中确认登录' : qrState === 'confirming' ? '正在写入登录会话，请稍候' : '长按二维码存入照片，再在抖音扫一扫中从相册选择';
   }
+  if (statusPlatform === 'douyin' && lastState?.config?.douyin?.login_method === 'phone' && status.state === 'running') {
+    const smsState = lastState?.douyin_sms_state;
+    title = smsState === 'invalid' ? '验证码错误' : smsState === 'submitting' ? '正在验证' : '等待短信验证码';
+    detail = smsState === 'invalid' ? '请输入短信中的新验证码' : smsState === 'submitting' ? '正在完成抖音登录，请稍候' : '验证码已发送，请在设置中输入';
+  }
   elements.band.dataset.state = status.state || 'not_configured';
   elements.statusTitle.textContent = title;
   elements.statusDetail.textContent = detail;
@@ -121,7 +128,8 @@ function renderStatus(globalStatus = {}) {
   elements.statusAction.href = screenshot || '#';
   elements.statusAction.textContent = statusPlatform === 'douyin' && lastState?.config?.douyin?.login_method === 'qrcode' ? '查看扫码二维码' : '查看登录页面';
   document.querySelector('#verification-title').textContent = `输入 ${platformNames[selectedPlatform]} 验证码`;
-  elements.verificationPanel.hidden = !['verification_required', 'invalid_verification'].includes(settingStatus.error_code)
+  const smsWaiting = selectedPlatform === 'douyin' && elements.loginMethod.value === 'phone' && ['waiting', 'invalid'].includes(lastState?.douyin_sms_state);
+  elements.verificationPanel.hidden = (!['verification_required', 'invalid_verification'].includes(settingStatus.error_code) && !smsWaiting)
     || (selectedPlatform !== 'instagram' && elements.loginMethod.value === 'cookie');
 }
 
@@ -282,11 +290,13 @@ function hydrateForm(config) {
 function updateLoginFields() {
   const external = selectedPlatform !== 'instagram', douyin = selectedPlatform === 'douyin';
   const qrOption = document.querySelector('#login-method option[value="qrcode"]');
+  const phoneOption = document.querySelector('#login-method option[value="phone"]');
   qrOption.hidden = qrOption.disabled = !douyin;
-  if (!douyin && elements.loginMethod.value === 'qrcode') elements.loginMethod.value = 'password';
-  const cookie = external && elements.loginMethod.value === 'cookie', qrcode = douyin && elements.loginMethod.value === 'qrcode';
+  phoneOption.hidden = phoneOption.disabled = !douyin;
+  if (!douyin && ['qrcode', 'phone'].includes(elements.loginMethod.value)) elements.loginMethod.value = 'password';
+  const cookie = external && elements.loginMethod.value === 'cookie', qrcode = douyin && elements.loginMethod.value === 'qrcode', phone = douyin && elements.loginMethod.value === 'phone';
   document.querySelector('#login-method option[value="password"]').textContent = douyin ? '公开模式' : '账号密码';
-  document.querySelector('#account-label').textContent = `${platformNames[selectedPlatform]} 账号`;
+  document.querySelector('#account-label').textContent = phone ? '中国大陆手机号' : `${platformNames[selectedPlatform]} 账号`;
   document.querySelector('#password-label').textContent = `${platformNames[selectedPlatform]} 密码`;
   document.querySelector('#login-method-field').hidden = !external;
   document.querySelector('#login-method-label').textContent = `${platformNames[selectedPlatform]} 登录方式`;
@@ -294,12 +304,12 @@ function updateLoginFields() {
   document.querySelector('#cookie-label').textContent = `${platformNames[selectedPlatform]} Cookie`;
   document.querySelector('#cookie-note').textContent = `从已登录 ${platformNames[selectedPlatform]} 的浏览器网络请求中复制 Cookie 请求头的值。`;
   document.querySelector('#public-note').hidden = !external || cookie;
-  document.querySelector('#public-note').textContent = qrcode ? '打开二维码后长按图片并“存储到照片”，再用抖音扫一扫从相册选择。二维码有效期约 2 分钟。' : douyin ? '公开访问受限时，请使用二维码或已登录浏览器的 Cookie。' : `采集公开 ${platformNames[selectedPlatform]} 账号时，账号和密码可以都留空。`;
-  elements.username.closest('label').hidden = cookie || douyin;
+  document.querySelector('#public-note').textContent = phone ? '保存设置后会发送短信验证码，并在当前浏览器会话中等待输入。' : qrcode ? '打开二维码后长按图片并“存储到照片”，再用抖音扫一扫从相册选择。二维码有效期约 2 分钟。' : douyin ? '公开访问受限时，请使用手机号、二维码或已登录浏览器的 Cookie。' : `采集公开 ${platformNames[selectedPlatform]} 账号时，账号和密码可以都留空。`;
+  elements.username.closest('label').hidden = cookie || (douyin && !phone);
   elements.password.closest('label').hidden = cookie || douyin;
-  elements.username.required = elements.enabled.checked && !external;
+  elements.username.required = elements.enabled.checked && (!external || phone);
   elements.targets.required = elements.enabled.checked;
-  elements.username.placeholder = selectedPlatform === 'x' ? 'X 用户名' : external ? '邮箱或用户名' : '手机号、邮箱或用户名';
+  elements.username.placeholder = phone ? '输入 11 位手机号' : selectedPlatform === 'x' ? 'X 用户名' : external ? '邮箱或用户名' : '手机号、邮箱或用户名';
   elements.targets.placeholder = douyin ? '抖音主页链接或 sec_user_id' : '例如 instagram, natgeo';
   document.querySelector('#targets-note').textContent = douyin ? '粘贴 www.douyin.com/user/... 主页链接，多个用逗号分隔' : '多个用户名用逗号分隔，不需要输入 @';
   document.querySelector('#reset-session').textContent = `重置 ${platformNames[selectedPlatform]} 会话`;

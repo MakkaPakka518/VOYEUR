@@ -105,6 +105,13 @@ class PlatformTests(unittest.TestCase):
         self.assertNotIn("douyin-session", str(state))
         self.assertEqual(self.save_douyin(login_method="qrcode").status_code, 200)
         self.assertEqual(self.client.get("/api/state").json()["config"]["douyin"]["login_method"], "qrcode")
+        self.assertEqual(self.save_douyin(login_method="phone", username="13800138000").status_code, 200)
+        self.assertEqual(self.client.get("/api/state").json()["config"]["douyin"]["username"], "13800138000")
+        write_json(self.root / "douyin/sms-state.json", {"state": "waiting"})
+        write_json(self.root / "douyin/verification.json", {"code": "123456"})
+        self.assertEqual(self.save_douyin(login_method="phone", username="13800138000", interval=900).status_code, 200)
+        self.assertTrue((self.root / "douyin/sms-state.json").exists())
+        self.assertTrue((self.root / "douyin/verification.json").exists())
         self.assertTrue((self.root / "tiktok/reset-session.trigger").exists())
         state = self.client.get("/api/state").json()
         self.assertTrue(state["config"]["tiktok"]["has_cookie"])
@@ -129,6 +136,7 @@ class PlatformTests(unittest.TestCase):
         self.assertEqual(self.save_x(username="mail@example.com", password="secret").status_code, 400)
         self.assertEqual(self.save_douyin(targets=["https://evil.example/user/test"]).status_code, 400)
         self.assertEqual(self.save_douyin(username="account", password="secret").status_code, 400)
+        self.assertEqual(self.save_douyin(login_method="phone", username="12345").status_code, 400)
         self.assertEqual(self.save_x(enabled=False, targets=[]).status_code, 200)
         self.assertFalse(self.client.get("/api/state").json()["config"]["x"]["enabled"])
 
@@ -455,6 +463,47 @@ class PlatformTests(unittest.TestCase):
             douyin.login(context, page, {"login_method": "qrcode"}, self.root)
         self.assertEqual(error.exception.code, "login_page_changed")
         self.assertFalse(stale.exists())
+
+    def test_douyin_phone_login_sends_and_submits_code(self):
+        root = self.root / "douyin"
+        root.mkdir()
+        write_json(root / "verification.json", {"code": "stale"})
+        context, page = MagicMock(), MagicMock()
+        context.cookies.side_effect = [[], [{"name": "sessionid"}, {"name": "sid_tt"}]]
+        phone, code, send, submit = MagicMock(), MagicMock(), MagicMock(), MagicMock()
+        send_group, submit_group, empty = MagicMock(), MagicMock(), MagicMock()
+        send_group.count.return_value = 1
+        send_group.nth.return_value = send
+        submit_group.count.return_value = 1
+        submit_group.first = submit
+        submit.is_visible.return_value = True
+        empty.count.return_value = 0
+        page.get_by_text.return_value = send_group
+        page.locator.side_effect = lambda selector: submit_group if selector == "#douyin_login_comp_btn_id" else empty
+        sent = False
+
+        def wait(milliseconds):
+            nonlocal sent
+            if milliseconds == 1500 and not sent:
+                write_json(root / "verification.json", {"code": "123456"})
+                sent = True
+
+        page.wait_for_timeout.side_effect = wait
+
+        def field(_page, selector):
+            if "normal-input" in selector:
+                return phone
+            if "button-input" in selector:
+                return code
+            return None
+
+        with patch.object(douyin, "visible", side_effect=field):
+            self.assertEqual(douyin.phone_login(context, page, {"username": "13800138000"}, root), "phone")
+        phone.fill.assert_called_once_with("13800138000")
+        send.click.assert_called_once()
+        code.fill.assert_called_once_with("123456")
+        submit.click.assert_called_once()
+        self.assertFalse((root / "verification.json").exists())
 
     def test_douyin_retries_persisted_failures_outside_current_limit(self):
         root = self.root / "douyin"

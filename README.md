@@ -69,6 +69,10 @@ then open Douyin's scanner on the same phone and choose the saved image from Pho
 the browser session open for two minutes, stores the resulting session only in `data/douyin/profile/`,
 and continues collection after confirmation.
 
+**Phone** login sends a verification code to a Chinese mainland mobile number. Keep the panel open,
+enter the code in the verification section, and the collector completes login in the same persistent
+browser page. Codes are consumed immediately and are never stored in `config.json`.
+
 ## Threads
 
 Choose **Threads** in settings and enter target usernames. Public profiles work without credentials;

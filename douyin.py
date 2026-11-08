@@ -156,12 +156,82 @@ def capture_qr_response(response, state):
         state["redirect_url"] = redirect
 
 
+def visible(page, selector):
+    locator = page.locator(selector)
+    return next((locator.nth(index) for index in range(locator.count()) if locator.nth(index).is_visible()), None)
+
+
+def phone_login(context, page, config, root):
+    state_path = root / "sms-state.json"
+    verification_path = root / "verification.json"
+    verification_path.unlink(missing_ok=True)
+    (root / "login-required.png").unlink(missing_ok=True)
+    page.goto(LOGIN_URL, wait_until="domcontentloaded", timeout=60_000)
+    page.wait_for_timeout(2500)
+    phone = visible(page, '#normal-input, input[placeholder="请输入手机号"], input[placeholder="手机号"]')
+    code_input = visible(page, '#button-input, input[placeholder="请输入验证码"]')
+    send = page.get_by_text("获取验证码", exact=True)
+    send = next((send.nth(index) for index in range(send.count()) if send.nth(index).is_visible()), None)
+    if not phone or not code_input or not send:
+        attention(page, root, "login_page_changed", "抖音登录页未显示手机号验证码表单")
+    phone.fill(config.get("username", ""))
+    send.click(timeout=10_000)
+    page.wait_for_timeout(1500)
+    captcha = page.locator('#captcha-verify-image, #captcha_container, [class*="captcha"], iframe[src*="captcha"]')
+    if any(captcha.nth(index).is_visible() for index in range(captcha.count())):
+        attention(page, root, "manual_verification", "抖音发送短信前要求人工验证，请查看登录页面")
+    error = visible(page, "#error_text_id")
+    message = error.inner_text().strip() if error else ""
+    if message:
+        raise DouyinError("sms_send_failed", message)
+
+    write_json(state_path, {"state": "waiting"})
+    deadline = time.monotonic() + 180
+    submitted = False
+    while time.monotonic() < deadline:
+        if has_session(context):
+            state_path.unlink(missing_ok=True)
+            verification_path.unlink(missing_ok=True)
+            (root / "login-required.png").unlink(missing_ok=True)
+            return "phone"
+        verification = str(read_json(verification_path, {}).get("code", ""))
+        if verification and not submitted:
+            verification_path.unlink(missing_ok=True)
+            code_input.fill(verification)
+            submit = page.locator("#douyin_login_comp_btn_id")
+            if not submit.count() or not submit.first.is_visible():
+                attention(page, root, "login_page_changed", "抖音登录页未显示登录按钮")
+            submit.first.click(timeout=10_000)
+            write_json(state_path, {"state": "submitting"})
+            submitted = True
+            page.wait_for_timeout(1500)
+        captcha = page.locator('#captcha-verify-image, #captcha_container, [class*="captcha"], iframe[src*="captcha"]')
+        if any(captcha.nth(index).is_visible() for index in range(captcha.count())):
+            attention(page, root, "manual_verification", "抖音登录要求人工验证，请查看登录页面")
+        error = visible(page, "#error_text_id")
+        message = error.inner_text().strip() if error else ""
+        if message and not submitted:
+            write_json(state_path, {"state": "error"})
+            raise DouyinError("sms_send_failed", message)
+        if submitted and message:
+            write_json(state_path, {"state": "invalid"})
+            submitted = False
+            code_input.fill("")
+        page.wait_for_timeout(1000)
+    page.screenshot(path=str(root / "login-required.png"), full_page=True)
+    verification_path.unlink(missing_ok=True)
+    write_json(state_path, {"state": "expired"})
+    raise DouyinError("sms_login_required", "短信验证码等待已超时，请重新保存手机号发送新验证码")
+
+
 def login(context, page, config, root):
     if config.get("login_method") == "cookie":
         context.add_cookies(parse_cookie(config.get("cookie", ""), ".douyin.com", "抖音"))
         return "cookie"
     if has_session(context):
         return "session"
+    if config.get("login_method") == "phone":
+        return phone_login(context, page, config, root)
     if config.get("login_method") == "qrcode":
         screenshot = root / "login-required.png"
         state_path = root / "qr-state.json"

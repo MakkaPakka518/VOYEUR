@@ -162,7 +162,7 @@ def state(library_data: bool = True):
             "tiktok": {"targets": tiktok.get("targets", []), "username": tiktok.get("username", ""), "has_password": bool(tiktok.get("password")), "has_cookie": bool(tiktok.get("cookie")), "login_method": tiktok.get("login_method", "password"), "enabled": tiktok.get("enabled", True), "interval": tiktok.get("interval", config.get("interval", 300)), "post_limit": tiktok.get("post_limit", config.get("post_limit", 12)), "cleanup_days": tiktok.get("cleanup_days", 0)},
             "threads": {"targets": threads.get("targets", []), "username": threads.get("username", ""), "has_password": bool(threads.get("password")), "has_cookie": bool(threads.get("cookie")), "login_method": threads.get("login_method", "password"), "enabled": threads.get("enabled", True), "interval": threads.get("interval", config.get("interval", 300)), "post_limit": threads.get("post_limit", config.get("post_limit", 12)), "cleanup_days": threads.get("cleanup_days", 0)},
             "x": {"targets": x.get("targets", []), "username": x.get("username", ""), "has_password": bool(x.get("password")), "has_cookie": bool(x.get("cookie")), "login_method": x.get("login_method", "password"), "enabled": x.get("enabled", True), "interval": x.get("interval", config.get("interval", 300)), "post_limit": x.get("post_limit", config.get("post_limit", 12)), "cleanup_days": x.get("cleanup_days", 0)},
-            "douyin": {"targets": douyin.get("targets", []), "username": "", "has_password": False, "has_cookie": bool(douyin.get("cookie")), "login_method": douyin.get("login_method", "password"), "enabled": douyin.get("enabled", True), "interval": douyin.get("interval", config.get("interval", 300)), "post_limit": douyin.get("post_limit", config.get("post_limit", 12)), "cleanup_days": douyin.get("cleanup_days", 0)},
+            "douyin": {"targets": douyin.get("targets", []), "username": douyin.get("username", ""), "has_password": False, "has_cookie": bool(douyin.get("cookie")), "login_method": douyin.get("login_method", "password"), "enabled": douyin.get("enabled", True), "interval": douyin.get("interval", config.get("interval", 300)), "post_limit": douyin.get("post_limit", config.get("post_limit", 12)), "cleanup_days": douyin.get("cleanup_days", 0)},
         },
         "status": read_json(STATUS_PATH, {"state": "not_configured"}),
         "login_screenshot": changing_file_url(DATA_DIR / "login-required.png"),
@@ -171,6 +171,7 @@ def state(library_data: bool = True):
         "x_login_screenshot": changing_file_url(DATA_DIR / "x" / "login-required.png"),
         "douyin_login_screenshot": changing_file_url(DATA_DIR / "douyin" / "login-required.png"),
         "douyin_qr_state": read_json(DATA_DIR / "douyin" / "qr-state.json", {}).get("state"),
+        "douyin_sms_state": read_json(DATA_DIR / "douyin" / "sms-state.json", {}).get("state"),
         "library": library() if library_data else None,
     }
 
@@ -207,7 +208,7 @@ async def save_config(request: Request):
     if platform in {"tiktok", "threads", "x", "douyin"}:
         label = {"tiktok": "TikTok", "threads": "Threads", "x": "X", "douyin": "抖音"}[platform]
         method = payload.get("login_method", saved.get("login_method", "password"))
-        if method not in ({"password", "cookie", "qrcode"} if platform == "douyin" else {"password", "cookie"}):
+        if method not in ({"password", "cookie", "qrcode", "phone"} if platform == "douyin" else {"password", "cookie"}):
             raise HTTPException(400, "请选择账号密码或 Cookie 登录")
         cookie = str(payload.get("cookie", "")) or str(saved.get("cookie", ""))
         if enabled and method == "cookie":
@@ -215,10 +216,12 @@ async def save_config(request: Request):
                 parse_cookie(cookie, f".{platform}.com", label)
             except ValueError as error:
                 raise HTTPException(400, str(error)) from error
-        elif enabled and bool(username) != bool(password):
+        elif enabled and platform == "douyin" and method == "phone" and not re.fullmatch(r"1[3-9]\d{9}", username):
+            raise HTTPException(400, "请输入有效的中国大陆手机号")
+        elif enabled and platform != "douyin" and bool(username) != bool(password):
             raise HTTPException(400, f"请同时填写{label}账号和密码，或都留空采集公开账号")
-        elif platform == "douyin" and (username or password):
-            raise HTTPException(400, "抖音仅支持公开模式或 Cookie 登录")
+        elif platform == "douyin" and password:
+            raise HTTPException(400, "抖音不支持密码登录，请选择手机号、二维码、Cookie 或公开模式")
         elif platform == "x" and username and not re.fullmatch(r"[A-Za-z0-9_]{1,15}", username):
             raise HTTPException(400, "X 密码登录请填写 X 用户名，不要填写邮箱")
         selected.update({"login_method": method, "cookie": cookie})
@@ -239,6 +242,10 @@ async def save_config(request: Request):
     if platform in {"tiktok", "threads", "x", "douyin"}:
         changed = changed or saved.get("login_method") != selected["login_method"] or saved.get("cookie", "") != selected["cookie"]
     if changed:
+        if platform == "douyin":
+            (root / "sms-state.json").unlink(missing_ok=True)
+            (root / "verification.json").unlink(missing_ok=True)
+            (root / "login-required.png").unlink(missing_ok=True)
         (root / "reset-session.trigger").write_text(datetime.now(timezone.utc).isoformat(), encoding="utf-8")
     TRIGGER_PATH.write_text(datetime.now(timezone.utc).isoformat(), encoding="utf-8")
     return {"ok": True}
@@ -258,6 +265,7 @@ def reset_session(platform: str = "instagram"):
     root.mkdir(parents=True, exist_ok=True)
     (root / "verification.json").unlink(missing_ok=True)
     (root / "login-paused.json").unlink(missing_ok=True)
+    (root / "sms-state.json").unlink(missing_ok=True)
     (root / "reset-session.trigger").write_text(datetime.now(timezone.utc).isoformat(), encoding="utf-8")
     TRIGGER_PATH.write_text(datetime.now(timezone.utc).isoformat(), encoding="utf-8")
     return {"ok": True}
