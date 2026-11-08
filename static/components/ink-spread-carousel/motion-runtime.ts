@@ -1,0 +1,80 @@
+/** Typed equivalent of the native lifecycle in motion-runtime.js. */
+export interface MotionOptions { height?: number; reducedMotion?: boolean }
+export interface MotionController {
+  element: HTMLElement;
+  root: ShadowRoot;
+  update(options: MotionOptions): void;
+  destroy(): void;
+}
+export interface SurfaceConfig { markup: string; css: string; width: number; height: number }
+
+export function createSurface(target: HTMLElement, config: SurfaceConfig, initial: MotionOptions = {}) {
+  const document = target.ownerDocument;
+  const window = document.defaultView!;
+  const element = document.createElement('div');
+  element.dataset.motionSurface = '';
+  element.style.cssText = 'display:block;position:relative;width:100%;min-width:0;overflow:hidden;isolation:isolate';
+  const root = element.attachShadow({ mode: 'open' });
+  const style = document.createElement('style');
+  style.textContent = ':host{display:block}[hidden]{display:none!important}*{box-sizing:border-box}.motion-frame{position:relative;transform-origin:top left}.motion-body{position:relative;width:100%;margin:0}' + config.css;
+  const frame = document.createElement('div');
+  frame.className = 'motion-frame';
+  const body = document.createElement('div');
+  body.className = 'motion-body';
+  body.innerHTML = config.markup;
+  frame.append(body);
+  root.append(style, frame);
+  target.append(element);
+  let options = { ...initial }, dead = false;
+  const media = window.matchMedia('(prefers-reduced-motion: reduce)');
+  const cleanups: (() => void)[] = [], frames = new Set<number>();
+  const reduced = () => options.reducedMotion ?? media.matches;
+  function resize() {
+    const styles = window.getComputedStyle(element);
+    const sceneWidth = parseFloat(styles.getPropertyValue('--motion-scene-width')) || config.width;
+    const sceneHeight = parseFloat(styles.getPropertyValue('--motion-scene-height')) || config.height;
+    const width = element.clientWidth || sceneWidth;
+    const scale = Math.min(1, width / sceneWidth);
+    const height = Number.isFinite(options.height) ? Math.max(620, options.height!) : sceneHeight;
+    element.style.setProperty('--motion-height', `${height}px`);
+    element.style.height = `${height * scale}px`;
+    element.dataset.reducedMotion = String(reduced());
+    frame.style.width = `${Math.max(width, sceneWidth)}px`;
+    frame.style.height = `${height}px`;
+    frame.style.transform = `scale(${scale})`;
+  }
+  const observer = new window.ResizeObserver(resize);
+  observer.observe(element);
+  resize();
+  const controller: MotionController = {
+    element, root,
+    update(next) { if (!dead) { options = { ...options, ...next }; resize(); } },
+    destroy() {
+      if (dead) return;
+      dead = true;
+      observer.disconnect();
+      frames.forEach(id => window.cancelAnimationFrame(id));
+      cleanups.reverse().forEach(cleanup => cleanup());
+      frames.clear();
+      element.remove();
+    },
+  };
+  return {
+    root, element, body, frame, document, window, controller, reduced,
+    ResizeObserver: window.ResizeObserver, IntersectionObserver: window.IntersectionObserver,
+    matchMedia: (query: string) => window.matchMedia(query),
+    on(node: EventTarget, type: string, listener: EventListener, settings?: AddEventListenerOptions) {
+      node.addEventListener(type, listener, settings);
+      cleanups.push(() => node.removeEventListener(type, listener, settings));
+    },
+    requestAnimationFrame(callback: FrameRequestCallback) {
+      if (dead) return 0;
+      const id = window.requestAnimationFrame(time => { frames.delete(id); if (!dead) callback(time); });
+      frames.add(id);
+      return id;
+    },
+    cancelAnimationFrame(id: number) { window.cancelAnimationFrame(id); frames.delete(id); },
+    addCleanup(cleanup: () => void) { cleanups.push(cleanup); },
+    ready() {},
+  };
+}

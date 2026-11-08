@@ -1,3 +1,5 @@
+import { imageGroupsMarkup, syncImageGroups, destroyImageGroups } from './gallery-carousels.js';
+
 const elements = {
   band: document.querySelector('#status-band'),
   statusTitle: document.querySelector('#status-title'),
@@ -79,7 +81,7 @@ function renderStatus(status = {}) {
 }
 
 function previewFor(item) {
-  return item.files.find(file => file.name.startsWith('media-')) || item.files[0];
+  return item.files.find(file => file.kind === 'video') || item.files.find(file => file.name.startsWith('media-')) || item.files[0];
 }
 
 function mediaCard(target, item, snapshot = false) {
@@ -95,7 +97,7 @@ function mediaCard(target, item, snapshot = false) {
     <a href="${escapeHtml(file.url)}?download=1"><span>${escapeHtml(file.name)}</span><small>下载</small></a>`).join('');
   const deleteButton = snapshot ? '' : `<button class="delete-button" type="button" data-target="${escapeHtml(target)}" data-item="${escapeHtml(item.id)}">删除</button>`;
   return `
-    <article class="media-card" data-kind="${kind}">
+    <article class="media-card" data-kind="${kind}" data-media-key="${escapeHtml(target)}:video:${escapeHtml(item.id)}" data-signature="${escapeHtml(JSON.stringify(item))}">
       <div class="media-frame">${source}<span class="file-badge">${kind === 'video' ? '视频' : kind === 'screenshot' ? '截图' : '图片'}</span></div>
       <div class="media-body">
         <div class="media-title"><span>${escapeHtml(title)}</span><time>${snapshot ? '' : formatDate(item.captured_at)}</time></div>
@@ -115,17 +117,49 @@ function renderLibrary(library) {
   if (!hasContent) {
     elements.library.innerHTML = `
       <div class="empty-state"><div><h3>还没有收藏</h3><p>完成 Instagram 登录并添加关注用户，首次检查后内容会出现在这里。</p><a href="#settings">前往采集设置</a></div></div>`;
+    syncImageGroups(elements.library);
     return;
   }
-  elements.library.innerHTML = library.map(target => {
-    const snapshot = target.latest ? mediaCard(target.name, { latest: target.latest }, true) : '';
-    const cards = target.items.map(item => mediaCard(target.name, item)).join('');
+  const template = document.createElement('template');
+  template.innerHTML = library.map(target => {
+    const photos = imageGroupsMarkup(target);
+    const cards = target.items.filter(item => item.files.some(file => file.kind === 'video')).map(item => mediaCard(target.name, item)).join('');
     const state = target.status.error ? escapeHtml(targetState(target.status)) : `${target.items.length} 条归档`;
-    return `<section class="target-block">
+    return `<section class="target-block" data-target-key="${escapeHtml(target.name)}">
       <div class="target-heading"><h3>@${escapeHtml(target.name)} <span class="rail-state">${state}</span></h3><div class="target-actions"><a href="https://www.instagram.com/${encodeURIComponent(target.name)}/" target="_blank" rel="noreferrer">打开主页</a><button class="delete-button" type="button" data-target="${escapeHtml(target.name)}">删除此用户</button></div></div>
-      <div class="media-grid">${snapshot}${cards}</div>
+      <div class="media-grid">${photos}${cards}</div>
     </section>`;
   }).join('');
+  // Keep live canvases, focus and video playback intact during status polling.
+  const existing = new Map([...elements.library.querySelectorAll('.target-block')].map(node => [node.dataset.targetKey, node]));
+  let cursor = elements.library.firstElementChild;
+  for (const desired of [...template.content.children]) {
+    const section = existing.get(desired.dataset.targetKey) || desired;
+    if (section !== desired) {
+      const heading = section.querySelector('.target-heading');
+      const newHeading = desired.querySelector('.target-heading');
+      if (heading.innerHTML !== newHeading.innerHTML) heading.replaceChildren(...newHeading.childNodes);
+      const grid = section.querySelector('.media-grid');
+      const oldCards = new Map([...grid.children].map(card => [card.dataset.mediaKey, card]));
+      let nextCard = grid.firstElementChild;
+      for (const card of [...desired.querySelector('.media-grid').children]) {
+        const old = oldCards.get(card.dataset.mediaKey);
+        const keep = old?.dataset.signature === card.dataset.signature ? old : card;
+        if (keep !== nextCard) grid.insertBefore(keep, nextCard);
+        nextCard = keep.nextElementSibling;
+        oldCards.delete(card.dataset.mediaKey);
+        if (old && keep !== old) old.remove();
+        nextCard = keep.nextElementSibling;
+      }
+      oldCards.forEach(card => card.remove());
+    }
+    if (section !== cursor) elements.library.insertBefore(section, cursor);
+    cursor = section.nextElementSibling;
+    existing.delete(desired.dataset.targetKey);
+  }
+  existing.forEach(section => section.remove());
+  elements.library.querySelectorAll(':scope > .empty-state, :scope > .loading-grid').forEach(node => node.remove());
+  syncImageGroups(elements.library);
   applyFilter();
 }
 
@@ -285,5 +319,11 @@ document.querySelectorAll('.side-nav a, .bottom-nav a').forEach(link => link.add
 
 document.addEventListener('visibilitychange', () => { if (!document.hidden) refresh(true); });
 refresh();
-setInterval(() => { if (!document.hidden) refresh(false); }, 5000);
-setInterval(() => { if (!document.hidden) refresh(true); }, 30000);
+const statusTimer = setInterval(() => { if (!document.hidden) refresh(false); }, 5000);
+const libraryTimer = setInterval(() => { if (!document.hidden) refresh(true); }, 30000);
+window.addEventListener('pagehide', event => {
+  if (event.persisted) return;
+  clearInterval(statusTimer);
+  clearInterval(libraryTimer);
+  destroyImageGroups();
+});
