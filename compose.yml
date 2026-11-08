@@ -1,0 +1,45 @@
+services:
+  collector:
+    build: .
+    restart: unless-stopped
+    init: true
+    shm_size: 256mb
+    mem_limit: 700m
+    env_file: .env
+    volumes:
+      - ./data:/data
+    logging:
+      options:
+        max-size: 10m
+        max-file: "3"
+  panel:
+    build: .
+    restart: unless-stopped
+    init: true
+    mem_limit: 160m
+    command: ["uvicorn", "web:app", "--host", "0.0.0.0", "--port", "8787", "--no-access-log"]
+    env_file: .env
+    volumes:
+      - ./data:/data
+    logging:
+      options:
+        max-size: 10m
+        max-file: "3"
+  caddy:
+    image: caddy:2.10-alpine
+    restart: unless-stopped
+    depends_on:
+      - panel
+    environment:
+      PANEL_DOMAIN: ${PANEL_DOMAIN:-example.com}
+    ports:
+      - "80:80"
+      - "8443:8443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
+volumes:
+  caddy_data:
+  caddy_config:

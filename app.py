@@ -1,0 +1,363 @@
+import json
+import os
+import re
+import shutil
+import sys
+import time
+from datetime import datetime, timezone
+from pathlib import Path
+from urllib.parse import urlparse
+
+from playwright.sync_api import TimeoutError as PlaywrightTimeout
+from playwright.sync_api import sync_playwright
+
+
+DATA_DIR = Path(os.getenv("DATA_DIR", "/data"))
+CONFIG_PATH = DATA_DIR / "config.json"
+STATUS_PATH = DATA_DIR / "status.json"
+TRIGGER_PATH = DATA_DIR / "run.trigger"
+RESET_PATH = DATA_DIR / "reset-session.trigger"
+VERIFICATION_PATH = DATA_DIR / "verification.json"
+USERNAME_RE = re.compile(r"^[a-z0-9._]+$")
+
+
+class LoginError(RuntimeError):
+    def __init__(self, code, message):
+        super().__init__(message)
+        self.code = code
+
+
+def now():
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def write_json(path, value):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_suffix(path.suffix + ".tmp")
+    temporary.write_text(json.dumps(value, ensure_ascii=False, indent=2), encoding="utf-8")
+    temporary.replace(path)
+
+
+def read_json(path, default):
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (FileNotFoundError, json.JSONDecodeError):
+        return default
+
+
+def load_config():
+    saved = read_json(CONFIG_PATH, {})
+    targets = saved.get("targets", [])
+    if isinstance(targets, str):
+        targets = targets.split(",")
+    targets = [target.strip().lstrip("@").lower() for target in targets if target.strip()]
+    return {
+        "targets": targets,
+        "username": str(saved.get("username", "")),
+        "password": str(saved.get("password", "")),
+        "interval": max(60, min(86_400, int(saved.get("interval", 300)))),
+        "post_limit": max(1, min(24, int(saved.get("post_limit", 12)))),
+    }
+
+
+def login_error(page, code, message):
+    page.screenshot(path=str(DATA_DIR / "login-required.png"), full_page=True)
+    raise LoginError(code, message)
+
+
+def visible_input(page, selector):
+    locator = page.locator(selector)
+    for index in range(locator.count()):
+        if locator.nth(index).is_visible():
+            return locator.nth(index)
+    return None
+
+
+def login_if_needed(page, username, password, verification_code=""):
+    cookies = page.context.cookies("https://www.instagram.com/")
+    if any(cookie["name"] == "sessionid" for cookie in cookies):
+        (DATA_DIR / "login-required.png").unlink(missing_ok=True)
+        return "session"
+    if not username or not password:
+        return "public"
+
+    page.goto("https://www.instagram.com/accounts/login/", wait_until="domcontentloaded", timeout=60_000)
+    cookie_button = page.get_by_role("button", name=re.compile(r"allow all cookies", re.I)).first
+    try:
+        cookie_button.wait_for(state="visible", timeout=8_000)
+        cookie_button.click()
+    except PlaywrightTimeout:
+        pass
+
+    username_input = page.locator(
+        'input[name="username"], input[name="email"], input[autocomplete="username"]'
+    ).first
+    try:
+        username_input.wait_for(state="visible", timeout=20_000)
+    except PlaywrightTimeout:
+        login_error(page, "login_page_changed", "未找到 Instagram 账号输入框，请查看登录截图")
+    password_input = page.locator(
+        'input[name="password"], input[name="pass"], input[autocomplete="current-password"]'
+    ).first
+    try:
+        password_input.wait_for(state="visible", timeout=10_000)
+    except PlaywrightTimeout:
+        login_error(page, "login_page_changed", "未找到 Instagram 密码输入框，请查看登录截图")
+
+    username_input.fill(username)
+    password_input.fill(password)
+    password_input.press("Enter")
+
+    verification_submitted = False
+    challenge_seen_at = None
+    deadline = time.monotonic() + 45
+    while time.monotonic() < deadline:
+        if any(cookie["name"] == "sessionid" for cookie in page.context.cookies("https://www.instagram.com/")):
+            (DATA_DIR / "login-required.png").unlink(missing_ok=True)
+            return "credentials"
+
+        try:
+            body = page.locator("body").inner_text(timeout=5_000).lower()
+        except PlaywrightTimeout:
+            time.sleep(1)
+            continue
+        if any(message in body for message in (
+            "password was incorrect", "password you entered is incorrect", "wrong password",
+            "password that you've entered is incorrect", "incorrect password",
+            "isn't connected to an account", "密码不正确", "密码错误",
+        )):
+            login_error(page, "invalid_credentials", "Instagram 账号或密码错误")
+
+        verification_input = visible_input(page,
+            'input[autocomplete="one-time-code"], input[name="verificationCode"], '
+            'input[name="approvals_code"], input[inputmode="numeric"]'
+        )
+        if not verification_input and ("/challenge/" in page.url or "/checkpoint/" in page.url):
+            verification_input = visible_input(page, 'input[type="text"], input:not([type])')
+        if verification_input:
+            if verification_submitted:
+                if any(message in body for message in ("incorrect code", "invalid code", "try again", "验证码错误")):
+                    login_error(page, "invalid_verification", "验证码错误，请输入新的验证码")
+            elif verification_code:
+                verification_input.fill(verification_code)
+                verification_input.press("Enter")
+                verification_submitted = True
+            else:
+                login_error(page, "verification_required", "Instagram 要求输入验证码")
+
+        if "/challenge/" in page.url or "/checkpoint/" in page.url:
+            challenge_seen_at = challenge_seen_at or time.monotonic()
+            if not verification_input and time.monotonic() - challenge_seen_at > 5:
+                login_error(page, "manual_verification", "Instagram 要求确认登录，请查看登录页面")
+        time.sleep(1)
+
+    if verification_submitted:
+        login_error(page, "invalid_verification", "验证码未通过，请输入新的验证码")
+    login_error(page, "login_failed", "Instagram 登录未完成，请查看登录页面")
+
+
+POST_RE = re.compile(r"^https://www\.instagram\.com/(?:([^/?#]+)/)?(?:p|reel)/([^/?#]+)/?")
+
+
+def post_links(page, limit, target):
+    links = page.locator('a[href*="/p/"], a[href*="/reel/"]').evaluate_all(
+        "elements => elements.map(element => element.href)"
+    )
+    result = []
+    for link in links:
+        match = POST_RE.match(link)
+        if not match or (match.group(1) and match.group(1).lower() != target):
+            continue
+        if link not in result:
+            result.append(link)
+    return result[:limit]
+
+
+def media_urls(page):
+    return page.locator("main li img, main li video").evaluate_all(
+        """elements => [...new Set(elements
+            .filter(element => element.tagName === 'VIDEO' || element.naturalWidth >= 500)
+            .map(element => element.currentSrc || element.src)
+            .filter(url => url && url.startsWith('http')))]"""
+    )
+
+
+def extension(content_type, url):
+    known = {
+        "image/jpeg": ".jpg",
+        "image/png": ".png",
+        "image/webp": ".webp",
+        "video/mp4": ".mp4",
+    }
+    content_type = content_type.split(";", 1)[0].lower()
+    if content_type in known:
+        return known[content_type]
+    suffix = Path(urlparse(url).path).suffix.lower()
+    return suffix if suffix in {".jpg", ".jpeg", ".png", ".webp", ".mp4"} else ".bin"
+
+
+def archive_post(context, page, target_dir, url):
+    post_id = url.rstrip("/").rsplit("/", 1)[-1]
+    item_dir = target_dir / "items" / post_id
+    item_dir.mkdir(parents=True, exist_ok=True)
+
+    video_urls = []
+    page.on("request", lambda request: video_urls.append(request.url)
+            if ".mp4" in request.url and request.url not in video_urls else None)
+
+    page.goto(url, wait_until="domcontentloaded", timeout=60_000)
+    page.wait_for_selector("main", timeout=30_000)
+    page.wait_for_timeout(4_000)
+    try:
+        page.locator("main video, main li video").first.click(timeout=3_000)
+    except PlaywrightTimeout:
+        pass
+    page.wait_for_timeout(4_000)
+    page.screenshot(path=str(item_dir / "page.png"), full_page=True)
+
+    candidates = media_urls(page) + video_urls[:1]
+    saved_media = []
+    for index, media_url in enumerate(dict.fromkeys(candidates), start=1):
+        try:
+            response = context.request.get(media_url, headers={"Referer": url}, timeout=60_000)
+            if not response.ok:
+                continue
+            filename = f"media-{index:02d}{extension(response.headers.get('content-type', ''), media_url)}"
+            (item_dir / filename).write_bytes(response.body())
+            saved_media.append(filename)
+        except Exception as error:
+            print(f"media download failed {url}: {error}", flush=True)
+
+    caption = page.locator('meta[property="og:description"]').get_attribute("content") or ""
+    write_json(item_dir / "metadata.json", {
+        "url": url,
+        "captured_at": now(),
+        "caption": caption[:10_000],
+        "media": saved_media,
+    })
+    return post_id, saved_media
+
+
+def collect_target(context, page, target, seen, post_limit):
+    target_dir = DATA_DIR / "targets" / target
+    target_dir.mkdir(parents=True, exist_ok=True)
+    url = f"https://www.instagram.com/{target}/"
+    page.goto(url, wait_until="domcontentloaded", timeout=60_000)
+    try:
+        page.wait_for_selector('a[href*="/p/"], a[href*="/reel/"]', timeout=20_000)
+    except PlaywrightTimeout:
+        pass
+    page.wait_for_timeout(2_000)
+    page.screenshot(path=str(target_dir / "latest.png"), full_page=True)
+
+    if "/accounts/login" in page.url:
+        raise RuntimeError("此主页需要有效的 Instagram 登录会话")
+
+    links = post_links(page, post_limit, target)
+    new_items = []
+    for link in reversed(links):
+        post_id = link.rstrip("/").rsplit("/", 1)[-1]
+        if post_id in seen:
+            continue
+        archived_id, files = archive_post(context, page, target_dir, link)
+        seen[archived_id] = now()
+        new_items.append({"id": archived_id, "url": link, "media": files})
+        write_json(DATA_DIR / "seen.json", seen)
+
+    result = {
+        "target": target,
+        "checked_at": now(),
+        "visible_posts": len(links),
+        "new_items": new_items,
+    }
+    write_json(target_dir / "status.json", result)
+    print(json.dumps(result, ensure_ascii=False), flush=True)
+    return result
+
+
+def run_cycle(playwright, config, seen):
+    write_json(STATUS_PATH, {"state": "running", "started_at": now(), "targets": []})
+    context = playwright.chromium.launch_persistent_context(
+        str(DATA_DIR / "profile"),
+        headless=True,
+        viewport={"width": 1440, "height": 1000},
+        locale="en-US",
+        args=["--disable-dev-shm-usage"],
+    )
+    try:
+        page = context.pages[0] if context.pages else context.new_page()
+        verification_code = str(read_json(VERIFICATION_PATH, {}).get("code", ""))
+        try:
+            login_mode = login_if_needed(page, config["username"], config["password"], verification_code)
+        finally:
+            if verification_code:
+                VERIFICATION_PATH.unlink(missing_ok=True)
+        page.close()
+        page = context.new_page()
+        results = []
+        for target in config["targets"]:
+            try:
+                results.append(collect_target(context, page, target, seen, config["post_limit"]))
+            except Exception as error:
+                result = {"target": target, "checked_at": now(), "error": str(error)}
+                write_json(DATA_DIR / "targets" / target / "status.json", result)
+                results.append(result)
+                print(json.dumps(result, ensure_ascii=False), flush=True)
+        state = "error" if any("error" in result for result in results) else "ready"
+        write_json(STATUS_PATH, {
+            "state": state,
+            "checked_at": now(),
+            "login_mode": login_mode,
+            "targets": results,
+        })
+    finally:
+        context.close()
+
+
+def wait_for_trigger(seconds):
+    marker = TRIGGER_PATH.stat().st_mtime_ns if TRIGGER_PATH.exists() else 0
+    for _ in range(seconds):
+        time.sleep(1)
+        current = TRIGGER_PATH.stat().st_mtime_ns if TRIGGER_PATH.exists() else 0
+        if current != marker:
+            return
+
+
+def main():
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    seen = read_json(DATA_DIR / "seen.json", {})
+    with sync_playwright() as playwright:
+        while True:
+            config = load_config()
+            invalid = [target for target in config["targets"] if not USERNAME_RE.fullmatch(target)]
+            if not config["targets"] or invalid:
+                write_json(STATUS_PATH, {
+                    "state": "not_configured",
+                    "checked_at": now(),
+                    "error": "请先配置有效的目标用户名",
+                })
+                wait_for_trigger(30)
+                continue
+            if RESET_PATH.exists():
+                shutil.rmtree(DATA_DIR / "profile", ignore_errors=True)
+                RESET_PATH.unlink()
+            try:
+                run_cycle(playwright, config, seen)
+            except LoginError as error:
+                write_json(STATUS_PATH, {
+                    "state": "error",
+                    "checked_at": now(),
+                    "error": str(error),
+                    "error_code": error.code,
+                })
+                print(str(error), flush=True)
+            except Exception as error:
+                write_json(STATUS_PATH, {"state": "error", "checked_at": now(), "error": str(error)})
+                print(str(error), flush=True)
+            if "--once" in sys.argv:
+                break
+            wait_for_trigger(config["interval"])
+
+
+if __name__ == "__main__":
+    main()

@@ -1,0 +1,12 @@
+{
+  http_port 80
+  https_port 8443
+}
+
+{$PANEL_DOMAIN}:8443 {
+  reverse_proxy panel:8787
+}
+
+http://{$PANEL_DOMAIN} {
+  redir https://{$PANEL_DOMAIN}:8443{uri} permanent
+}
