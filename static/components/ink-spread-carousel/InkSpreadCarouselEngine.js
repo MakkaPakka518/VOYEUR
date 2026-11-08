@@ -523,7 +523,7 @@ var SLIDES = [{ "alt": "Black yaks and a distant red-hooded figure on an emerald
 function mountInkSpreadCarousel(target, options = {}) {
   const styles = CSS + `
     .ib-scene{font-family:inherit;background:var(--ink-background,#eaeaea)}
-    .ib-card{overflow:visible}
+    .ib-card{overflow:visible;border-color:var(--ink-frame,#fff)}
     .ib-fallback,.ib-canvas{overflow:hidden}
     .ib-error{font:14px/1.5 system-ui,sans-serif}
     .ib-status{font-family:system-ui,sans-serif}

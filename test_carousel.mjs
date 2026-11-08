@@ -60,7 +60,7 @@ const server = createServer(async (req, res) => {
     return;
   }
   try {
-    const path = ['/', '/instagram', '/tiktok', '/settings'].includes(url.pathname) ? '/static/index.html' : url.pathname;
+    const path = url.pathname === '/login' ? '/static/login.html' : ['/', '/instagram', '/tiktok', '/settings'].includes(url.pathname) ? '/static/index.html' : url.pathname;
     if (!path.startsWith('/static/') || path.includes('..')) throw new Error('Not found');
     res.setHeader('Content-Type', ({ '.js': 'text/javascript', '.css': 'text/css', '.html': 'text/html', '.svg': 'image/svg+xml' })[extname(path)] || 'application/octet-stream');
     res.end(await readFile(join(root, path)));
@@ -284,23 +284,66 @@ try {
   const panel = await open();
   await panel.goto(base);
   await panel.locator('.photo-carousel-card').first().waitFor();
+  const themeSwitch = panel.locator('.page-header .theme-toggle .pixel-switch');
+  await themeSwitch.waitFor();
+  assert.equal(await panel.locator('.theme-toggle [role="switch"]').count(), 2);
+  assert.equal(await themeSwitch.getAttribute('aria-checked'), 'true');
+  let themeBox = await themeSwitch.boundingBox();
+  assert(themeBox.width >= 90 && themeBox.height >= 48, JSON.stringify(themeBox));
+  await themeSwitch.click();
+  await panel.waitForFunction(() => document.documentElement.dataset.theme === 'dark');
+  assert.equal(await panel.evaluate(() => localStorage.getItem('ig-luv-theme')), 'dark');
+  assert.equal(await panel.locator('meta[name="theme-color"]').getAttribute('content'), '#0b1522');
+  assert.equal(await panel.locator('.mobile-header .theme-toggle .pixel-switch').getAttribute('aria-checked'), 'false');
+  await panel.screenshot({ path: `${artifacts}/theme-dark-1440.png` });
+  for (const width of [375, 768]) {
+    await panel.setViewportSize({ width, height: 1000 });
+    assert.equal(await panel.locator('.theme-toggle:visible').count(), 1);
+    assert(await panel.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
+    assert.equal(await panel.locator('body').evaluate(node => getComputedStyle(node).backgroundColor), 'rgb(16, 24, 32)');
+    await panel.screenshot({ path: `${artifacts}/theme-dark-${width}.png` });
+  }
+  await panel.setViewportSize({ width: 1440, height: 1000 });
+  await themeSwitch.press('Space');
+  await panel.waitForFunction(() => document.documentElement.dataset.theme === 'light');
+  themeBox = await themeSwitch.boundingBox();
+  await panel.mouse.move(themeBox.x + themeBox.width * .8, themeBox.y + themeBox.height / 2);
+  await panel.mouse.down();
+  await panel.mouse.move(themeBox.x + themeBox.width * .2, themeBox.y + themeBox.height / 2, { steps: 8 });
+  await panel.mouse.up();
+  await panel.waitForFunction(() => document.documentElement.dataset.theme === 'dark');
+  await themeSwitch.click();
+  await themeSwitch.click();
+  assert.equal(await themeSwitch.getAttribute('aria-checked'), 'false', 'rapid clicks must end on the last requested theme');
+  await panel.emulateMedia({ reducedMotion: 'reduce' });
+  await themeSwitch.press('Space');
+  await panel.waitForFunction(() => document.documentElement.dataset.theme === 'light');
+  assert.equal(await themeSwitch.locator('.pixel-knob').evaluate(node => node.style.left), '264px');
+  await panel.emulateMedia({ reducedMotion: 'no-preference' });
+  await themeSwitch.click();
+  await panel.waitForFunction(() => document.documentElement.dataset.theme === 'dark');
+  await panel.reload();
+  await panel.waitForFunction(() => document.documentElement.dataset.theme === 'dark' && document.querySelector('.theme-toggle [data-motion-surface]'));
+  assert.equal(await panel.evaluate(() => localStorage.getItem('ig-luv-theme')), 'dark');
+  await panel.locator('.page-header .theme-toggle .pixel-switch').click();
+  await panel.waitForFunction(() => document.documentElement.dataset.theme === 'light');
   assert.equal(await panel.locator('.photo-carousel-card[data-kind="image"]').count(), 2, 'all 14 images split into groups, none lost');
   assert.equal(await panel.locator('.photo-carousel-card[data-kind="screenshot"]').count(), 2);
   assert.equal(await panel.locator('.media-card[data-kind="video"] video').count(), 1);
   const card = panel.locator('.photo-carousel-card').first();
   await card.locator('.ib-scene[data-ready="true"]').waitFor();
   await clickSide(card.locator('.ib-photo'), 'right');
-  await panel.waitForFunction(() => document.querySelector('[data-motion-surface]').shadowRoot.querySelector('.ib-scene').dataset.index === '1');
+  await panel.waitForFunction(() => document.querySelector('.photo-carousel-card [data-motion-surface]').shadowRoot.querySelector('.ib-scene').dataset.index === '1');
   assert.equal(await card.locator('.delete-button').getAttribute('data-item'), 'post-1');
   assert.match(await card.locator('.media-actions a').first().getAttribute('href'), /photo\/1/);
   await panel.evaluate(() => {
-    window.panelCanvas = document.querySelector('[data-motion-surface]').shadowRoot.querySelector('canvas');
+    window.panelCanvas = document.querySelector('.photo-carousel-card [data-motion-surface]').shadowRoot.querySelector('canvas');
     window.panelVideo = document.querySelector('video');
   });
   revision++;
   await panel.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
   await panel.waitForTimeout(250);
-  assert(await panel.evaluate(() => window.panelCanvas === document.querySelector('[data-motion-surface]').shadowRoot.querySelector('canvas')));
+  assert(await panel.evaluate(() => window.panelCanvas === document.querySelector('.photo-carousel-card [data-motion-surface]').shadowRoot.querySelector('canvas')));
   assert(await panel.evaluate(() => window.panelVideo === document.querySelector('video')));
   assert.equal(await card.locator('.photo-count').innerText(), '2 / 12');
 
@@ -322,7 +365,7 @@ try {
   await panel.screenshot({ path: `${artifacts}/image-preview-desktop.png` });
   await panel.keyboard.press('Escape');
   await dialog.waitFor({ state: 'hidden' });
-  assert(Math.abs(await panel.evaluate(() => scrollY) - originalScroll) < 2);
+  await panel.waitForFunction(expected => Math.abs(scrollY - expected) < 2, originalScroll);
   assert(await original.evaluate(node => document.activeElement === node));
   await panel.goForward();
   await dialog.waitFor({ state: 'visible' });
@@ -346,8 +389,11 @@ try {
       assert(photo.width / 2 >= 48, 'both mobile photo halves must be usable touch targets');
       assert.equal(await card.locator('.ib-nav').count(), 0);
       await clickSide(card.locator('.ib-photo'), 'right');
-      await panel.waitForFunction(() => document.querySelector('[data-motion-surface]').shadowRoot.querySelector('.ib-scene').dataset.index === '2');
+      await panel.waitForFunction(() => document.querySelector('.photo-carousel-card [data-motion-surface]').shadowRoot.querySelector('.ib-scene').dataset.index === '2');
       assert.equal(await card.locator('.delete-button').getAttribute('data-item'), 'post-2');
+      const mobileTheme = panel.locator('.mobile-header .theme-toggle .pixel-switch');
+      const toggleBox = await mobileTheme.boundingBox();
+      assert(toggleBox.width >= 90 && toggleBox.height >= 48, JSON.stringify(toggleBox));
     }
     await panel.screenshot({ path: `${artifacts}/panel-${width}.png` });
   }
@@ -472,6 +518,15 @@ try {
   await mobilePreview.locator('#platform-settings summary').tap();
   assert(await mobilePreview.locator('#settings-platform').isHidden());
   await mobilePreview.close();
+  const loginPage = await open();
+  await loginPage.goto(base);
+  await loginPage.evaluate(() => localStorage.setItem('ig-luv-theme', 'dark'));
+  await loginPage.goto(`${base}/login`);
+  assert.equal(await loginPage.locator('html').getAttribute('data-theme'), 'dark');
+  assert.equal(await loginPage.locator('meta[name="theme-color"]').getAttribute('content'), '#0b1522');
+  assert.equal(await loginPage.locator('.login-form-wrap').evaluate(node => getComputedStyle(node).backgroundColor), 'rgb(16, 24, 32)');
+  await loginPage.screenshot({ path: `${artifacts}/login-dark.png` });
+  await loginPage.close();
   assert.deepEqual(errors, []);
   console.log(`PASS: WebGL/2D ink masks, interruption, keyboard/touch, failure/races, visibility, reduced motion, context recovery, cleanup, gallery actions and 375/768/1440 layouts. Screenshots: ${artifacts}`);
 } finally {

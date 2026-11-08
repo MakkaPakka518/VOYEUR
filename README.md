@@ -70,6 +70,12 @@ The settings page groups platform/login, target users, and collection frequency 
 expandable sections, initially collapsed. Settings no longer appear below media.
 Instagram and TikTok icons are included locally from Simple Icons (CC0-1.0).
 
+The header includes a compact [LeiBox Pixel Day–Night Toggle](https://leibox.pantoria.cn/docs/animations/pixel-toggle)
+beside the refresh action. It keeps the original Canvas2D particles, drag/touch and keyboard behavior,
+with audio disabled for the panel. The selected light or dark theme is stored only in the local browser,
+synchronizes desktop/mobile switch instances, and updates browser theme colors. Component source and
+its provenance notice are under `static/components/pixel-toggle/`.
+
 Photos and screenshots are grouped in batches of up to 12. Click the left half of a photo
 for the previous photo, or the right half for the next. The reveal starts at the press location.
 Left/Right, Home and End also work; Enter or Space advances to the next photo.

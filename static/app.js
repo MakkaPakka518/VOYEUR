@@ -1,5 +1,6 @@
 import { imageGroupsMarkup, syncImageGroups, destroyImageGroups } from './gallery-carousels.js';
 import { createMediaPreview } from './media-preview.js';
+import { createThemeToggle } from './theme-toggle.js';
 
 const elements = {
   band: document.querySelector('#status-band'),
@@ -32,6 +33,7 @@ let selectedPlatform = 'instagram';
 let activePlatform = 'all';
 const platformNames = { instagram: 'Instagram', tiktok: 'TikTok' };
 const preview = createMediaPreview(document.querySelector('#media-preview'));
+const themeToggle = createThemeToggle([...document.querySelectorAll('.theme-toggle')]);
 const pages = {
   '/': { title: '全部媒体', platform: 'all' },
   '/instagram': { title: 'Instagram', platform: 'instagram' },
@@ -452,5 +454,6 @@ window.addEventListener('pagehide', event => {
   clearInterval(statusTimer);
   clearInterval(libraryTimer);
   preview.destroy();
+  themeToggle.destroy();
   destroyImageGroups();
 });
