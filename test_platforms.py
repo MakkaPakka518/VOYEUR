@@ -98,6 +98,8 @@ class PlatformTests(unittest.TestCase):
         self.assertNotIn("x-session", str(state))
         self.assertTrue(state["config"]["douyin"]["has_cookie"])
         self.assertNotIn("douyin-session", str(state))
+        self.assertEqual(self.save_douyin(login_method="qrcode").status_code, 200)
+        self.assertEqual(self.client.get("/api/state").json()["config"]["douyin"]["login_method"], "qrcode")
         self.assertTrue((self.root / "tiktok/reset-session.trigger").exists())
         state = self.client.get("/api/state").json()
         self.assertTrue(state["config"]["tiktok"]["has_cookie"])
@@ -112,6 +114,7 @@ class PlatformTests(unittest.TestCase):
                         {"targets": [123]}, {"login_method": "other"}, {"platform": "other"},
                         {"login_method": "cookie", "cookie": "bad"}, {"interval": "bad"}):
             self.assertEqual(self.save_tiktok(**payload).status_code, 400, payload)
+        self.assertEqual(self.save_tiktok(login_method="qrcode").status_code, 400)
         self.assertEqual(self.save_tiktok(username="name", password="").status_code, 400)
         self.assertEqual(target_list("@Demo, DEMO, other.name"), ["demo", "other.name"])
         self.assertEqual(target_list("https://www.douyin.com/user/MS4wLjAB_Test-ID?from=web", "douyin"), ["MS4wLjAB_Test-ID"])
@@ -346,7 +349,7 @@ class PlatformTests(unittest.TestCase):
         self.assertTrue(any("video_id=v0200test" in url for url in video_urls))
 
         context = MagicMock()
-        self.assertEqual(douyin.login(context, {"login_method": "cookie", "cookie": "sessionid=douyin-session; ttwid=device"}), "cookie")
+        self.assertEqual(douyin.login(context, MagicMock(), {"login_method": "cookie", "cookie": "sessionid=douyin-session; ttwid=device"}, self.root), "cookie")
         self.assertEqual(context.add_cookies.call_args.args[0][0]["domain"], ".douyin.com")
         response = MagicMock(ok=True, headers={"content-type": "image/jpeg"})
         response.body.return_value = b"image contents"
@@ -358,6 +361,36 @@ class PlatformTests(unittest.TestCase):
         script_page = MagicMock()
         script_page.locator.return_value.all_text_contents.return_value = ['{"aweme_id":"7666666666666666666","desc":"Fish &quot; Chips","author":{"sec_uid":"MS4wLjAB_Test-ID"},"images":[{"url_list":["https://p3.douyinpic.com/a.jpg"]}]}']
         self.assertEqual(douyin.page_data(script_page)[0]["desc"], "Fish &quot; Chips")
+
+    def test_douyin_qr_login_requires_complete_session(self):
+        context = MagicMock()
+        context.cookies.return_value = [{"name": "uid_tt"}, {"name": "sessionid"}]
+        self.assertFalse(douyin.has_session(context))
+        context.cookies.return_value = [{"name": "sessionid"}, {"name": "sid_tt"}]
+        self.assertTrue(douyin.has_session(context))
+
+        context.cookies.side_effect = [[], [], [{"name": "sessionid"}, {"name": "sid_tt"}]]
+        page, image = MagicMock(), MagicMock()
+        image.get_attribute.return_value = ""
+        image.screenshot.side_effect = lambda path: Path(path).write_bytes(b"qr-image")
+        with patch.object(douyin, "qr_image", return_value=image):
+            self.assertEqual(douyin.login(context, page, {"login_method": "qrcode"}, self.root), "qrcode")
+        page.goto.assert_called_once_with(douyin.LOGIN_URL, wait_until="domcontentloaded", timeout=60_000)
+        image.screenshot.assert_called_once_with(path=str(self.root / "login-required.tmp.png"))
+
+        qr = MagicMock()
+        qr.get_attribute.return_value = "data:image/png;base64,cXItYnl0ZXM="
+        douyin.save_qr(qr, self.root / "qr.png")
+        self.assertEqual((self.root / "qr.png").read_bytes(), b"qr-bytes")
+
+        context.cookies.side_effect = None
+        context.cookies.return_value = []
+        stale = self.root / "login-required.png"
+        stale.write_bytes(b"stale")
+        with patch.object(douyin, "qr_image", return_value=None), patch.object(douyin.time, "monotonic", side_effect=[0, 16]), self.assertRaises(douyin.DouyinError) as error:
+            douyin.login(context, page, {"login_method": "qrcode"}, self.root)
+        self.assertEqual(error.exception.code, "login_page_changed")
+        self.assertFalse(stale.exists())
 
     def test_douyin_retries_persisted_failures_outside_current_limit(self):
         root = self.root / "douyin"

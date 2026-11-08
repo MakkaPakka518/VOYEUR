@@ -1,6 +1,8 @@
+import base64
 import json
 import re
 import shutil
+import time
 from datetime import datetime, timezone
 from urllib.parse import quote, unquote
 
@@ -9,6 +11,7 @@ from platforms import parse_cookie, read_json, write_json
 
 POST_RE = re.compile(r"^https://www\.douyin\.com/(video|note)/(\d+)")
 API_PATHS = ("/aweme/v1/web/aweme/post/", "/aweme/v1/web/aweme/detail/", "/aweme/v1/web/user/profile/other/")
+LOGIN_URL = "https://www.douyin.com/login_page?service=https%3A%2F%2Fwww.douyin.com"
 
 
 class DouyinError(RuntimeError):
@@ -112,13 +115,65 @@ def attention(page, root, code, message):
     raise DouyinError(code, message)
 
 
-def login(context, config):
+def has_session(context):
+    names = {cookie["name"] for cookie in context.cookies("https://www.douyin.com")}
+    return bool(names & {"sessionid", "sessionid_ss"}) and "sid_tt" in names
+
+
+def qr_image(page):
+    candidates = page.locator('img[src^="data:image/png;base64,"], #animate_qrcode_container img, [class*="qrcode"] img')
+    for index in range(candidates.count()):
+        candidate = candidates.nth(index)
+        box = candidate.bounding_box() if candidate.is_visible() else None
+        if box and box["width"] >= 140 and box["height"] >= 140:
+            return candidate
+    return None
+
+
+def save_qr(image, path):
+    temporary = path.with_name(path.stem + ".tmp" + path.suffix)
+    source = image.get_attribute("src") or ""
+    if source.startswith("data:image/png;base64,"):
+        temporary.write_bytes(base64.b64decode(source.partition(",")[2]))
+    else:
+        image.screenshot(path=str(temporary))
+    temporary.chmod(0o600)
+    temporary.replace(path)
+
+
+def login(context, page, config, root):
     if config.get("login_method") == "cookie":
         context.add_cookies(parse_cookie(config.get("cookie", ""), ".douyin.com", "抖音"))
         return "cookie"
-    if any(cookie["name"] in {"sessionid", "sessionid_ss", "sid_tt", "uid_tt"}
-           for cookie in context.cookies("https://www.douyin.com")):
+    if has_session(context):
         return "session"
+    if config.get("login_method") == "qrcode":
+        screenshot = root / "login-required.png"
+        screenshot.unlink(missing_ok=True)
+        page.goto(LOGIN_URL, wait_until="domcontentloaded", timeout=60_000)
+        page.wait_for_timeout(2500)
+        acquisition_deadline = time.monotonic() + 15
+        image = qr_image(page)
+        while not image and time.monotonic() < acquisition_deadline:
+            page.wait_for_timeout(500)
+            image = qr_image(page)
+        if not image:
+            page.screenshot(path=str(screenshot), full_page=True)
+            raise DouyinError("login_page_changed", "抖音登录页未显示二维码，请查看登录页面后重试")
+        save_qr(image, screenshot)
+        deadline = time.monotonic() + 120
+        last_capture = time.monotonic()
+        while time.monotonic() < deadline:
+            if has_session(context):
+                screenshot.unlink(missing_ok=True)
+                return "qrcode"
+            image = qr_image(page)
+            if image and time.monotonic() - last_capture >= 4:
+                save_qr(image, screenshot)
+                last_capture = time.monotonic()
+            page.wait_for_timeout(1000)
+        page.screenshot(path=str(screenshot), full_page=True)
+        raise DouyinError("qr_login_required", "抖音二维码已过期，请点击立即检查生成新二维码")
     return "public"
 
 
@@ -265,12 +320,12 @@ def run_cycle(playwright, config, root, limit):
         (root / "reset-session.trigger").unlink()
     seen = read_json(root / "seen.json", {})
     context = playwright.chromium.launch_persistent_context(
-        str(root / "profile"), headless=True, viewport={"width": 1440, "height": 1000}, locale="zh-CN",
-        timezone_id="Asia/Shanghai", args=["--disable-dev-shm-usage"],
+        str(root / "profile"), headless=False, viewport={"width": 1440, "height": 1000}, locale="zh-CN",
+        timezone_id="Asia/Shanghai", args=["--disable-dev-shm-usage", "--no-sandbox"],
     )
     try:
         page = context.pages[0] if context.pages else context.new_page()
-        mode = login(context, config)
+        mode = login(context, page, config, root)
         results = []
         for target in config["targets"]:
             try:

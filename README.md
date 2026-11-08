@@ -63,6 +63,11 @@ verification, sign in to `www.douyin.com` in your browser, copy the complete `Co
 value, and switch to **Cookie** login. The Cookie commonly contains `sessionid`, `ttwid`, `odin_tt` and
 `s_v_web_id`. Albums, videos and live-photo clips are archived under `data/douyin/`.
 
+**QR code** login works without copying browser cookies. Save the protected QR preview from the panel,
+then open Douyin's scanner on the same phone and choose the saved image from Photos. The server keeps
+the browser session open for two minutes, stores the resulting session only in `data/douyin/profile/`,
+and continues collection after confirmation.
+
 ## Threads
 
 Choose **Threads** in settings and enter target usernames. Public profiles work without credentials;

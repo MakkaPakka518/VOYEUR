@@ -102,15 +102,20 @@ function renderStatus(globalStatus = {}) {
     ready: ['采集正常', '会话有效，等待下一次检查'],
     error: ['需要处理', status.error || '检查失败，请查看目标状态'],
   };
-  const [title, detail] = errors[status.error_code] || labels[status.state] || labels.not_configured;
+  let [title, detail] = errors[status.error_code] || labels[status.state] || labels.not_configured;
+  const screenshot = statusPlatform === 'instagram' ? lastState?.login_screenshot : lastState?.[`${statusPlatform}_login_screenshot`];
+  if (statusPlatform === 'douyin' && lastState?.config?.douyin?.login_method === 'qrcode' && screenshot && status.state === 'running') {
+    title = '等待扫码';
+    detail = '长按二维码存入照片，再在抖音扫一扫中从相册选择';
+  }
   elements.band.dataset.state = status.state || 'not_configured';
   elements.statusTitle.textContent = title;
   elements.statusDetail.textContent = detail;
   elements.statusTime.textContent = formatDate(status.checked_at || status.started_at);
   elements.railState.textContent = title;
-  const screenshot = statusPlatform === 'instagram' ? lastState?.login_screenshot : lastState?.[`${statusPlatform}_login_screenshot`];
   elements.statusAction.hidden = !screenshot;
   elements.statusAction.href = screenshot || '#';
+  elements.statusAction.textContent = statusPlatform === 'douyin' && lastState?.config?.douyin?.login_method === 'qrcode' ? '查看扫码二维码' : '查看登录页面';
   document.querySelector('#verification-title').textContent = `输入 ${platformNames[selectedPlatform]} 验证码`;
   elements.verificationPanel.hidden = !['verification_required', 'invalid_verification'].includes(settingStatus.error_code)
     || (selectedPlatform !== 'instagram' && elements.loginMethod.value === 'cookie');
@@ -252,7 +257,11 @@ function hydrateForm(config) {
 }
 
 function updateLoginFields() {
-  const external = selectedPlatform !== 'instagram', douyin = selectedPlatform === 'douyin', cookie = external && elements.loginMethod.value === 'cookie';
+  const external = selectedPlatform !== 'instagram', douyin = selectedPlatform === 'douyin';
+  const qrOption = document.querySelector('#login-method option[value="qrcode"]');
+  qrOption.hidden = qrOption.disabled = !douyin;
+  if (!douyin && elements.loginMethod.value === 'qrcode') elements.loginMethod.value = 'password';
+  const cookie = external && elements.loginMethod.value === 'cookie', qrcode = douyin && elements.loginMethod.value === 'qrcode';
   document.querySelector('#login-method option[value="password"]').textContent = douyin ? '公开模式' : '账号密码';
   document.querySelector('#account-label').textContent = `${platformNames[selectedPlatform]} 账号`;
   document.querySelector('#password-label').textContent = `${platformNames[selectedPlatform]} 密码`;
@@ -262,7 +271,7 @@ function updateLoginFields() {
   document.querySelector('#cookie-label').textContent = `${platformNames[selectedPlatform]} Cookie`;
   document.querySelector('#cookie-note').textContent = `从已登录 ${platformNames[selectedPlatform]} 的浏览器网络请求中复制 Cookie 请求头的值。`;
   document.querySelector('#public-note').hidden = !external || cookie;
-  document.querySelector('#public-note').textContent = douyin ? '公开访问受限时，请改用已登录浏览器的 Cookie。' : `采集公开 ${platformNames[selectedPlatform]} 账号时，账号和密码可以都留空。`;
+  document.querySelector('#public-note').textContent = qrcode ? '打开二维码后长按图片并“存储到照片”，再用抖音扫一扫从相册选择。二维码有效期约 2 分钟。' : douyin ? '公开访问受限时，请使用二维码或已登录浏览器的 Cookie。' : `采集公开 ${platformNames[selectedPlatform]} 账号时，账号和密码可以都留空。`;
   elements.username.closest('label').hidden = cookie || douyin;
   elements.password.closest('label').hidden = cookie || douyin;
   elements.username.required = !external;

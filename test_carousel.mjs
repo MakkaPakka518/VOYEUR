@@ -547,6 +547,12 @@ try {
   assert(await panel.locator('#ig-username').isHidden());
   assert.equal(await panel.locator('#ig-targets').inputValue(), 'MS4wLjAB_Test-ID');
   assert.match(await panel.locator('#ig-targets').getAttribute('placeholder'), /主页链接/);
+  await panel.locator('#login-method').selectOption('qrcode');
+  assert(await panel.locator('#cookie-field').isHidden());
+  assert.match(await panel.locator('#public-note').innerText(), /存储到照片/);
+  await panel.getByRole('button', { name: '保存并连接', exact: true }).click();
+  assert(requests.some(([method, path, body]) => method === 'POST' && path === '/api/config' && body.platform === 'douyin' && body.login_method === 'qrcode'));
+  await panel.waitForFunction(() => !document.querySelector('#settings-form [type="submit"]').disabled);
   await panel.locator('#login-method').selectOption('cookie');
   assert.equal(await panel.locator('#cookie-label').innerText(), '抖音 Cookie');
   await panel.locator('#tiktok-cookie').fill('sessionid=douyin-fixture; ttwid=device');

@@ -93,6 +93,13 @@ def file_url(path):
     return "/files/" + quote(str(path.relative_to(DATA_DIR)), safe="/")
 
 
+def changing_file_url(path):
+    try:
+        return f"{file_url(path)}?v={path.stat().st_mtime_ns}"
+    except FileNotFoundError:
+        return None
+
+
 def platform_library(platform):
     result = []
     targets_dir = platform_dir(DATA_DIR, platform) / "targets"
@@ -156,11 +163,11 @@ def state(library_data: bool = True):
             "douyin": {"targets": douyin.get("targets", []), "username": "", "has_password": False, "has_cookie": bool(douyin.get("cookie")), "login_method": douyin.get("login_method", "password")},
         },
         "status": read_json(STATUS_PATH, {"state": "not_configured"}),
-        "login_screenshot": file_url(DATA_DIR / "login-required.png") if (DATA_DIR / "login-required.png").exists() else None,
-        "tiktok_login_screenshot": file_url(DATA_DIR / "tiktok" / "login-required.png") if (DATA_DIR / "tiktok" / "login-required.png").exists() else None,
-        "threads_login_screenshot": file_url(DATA_DIR / "threads" / "login-required.png") if (DATA_DIR / "threads" / "login-required.png").exists() else None,
-        "x_login_screenshot": file_url(DATA_DIR / "x" / "login-required.png") if (DATA_DIR / "x" / "login-required.png").exists() else None,
-        "douyin_login_screenshot": file_url(DATA_DIR / "douyin" / "login-required.png") if (DATA_DIR / "douyin" / "login-required.png").exists() else None,
+        "login_screenshot": changing_file_url(DATA_DIR / "login-required.png"),
+        "tiktok_login_screenshot": changing_file_url(DATA_DIR / "tiktok" / "login-required.png"),
+        "threads_login_screenshot": changing_file_url(DATA_DIR / "threads" / "login-required.png"),
+        "x_login_screenshot": changing_file_url(DATA_DIR / "x" / "login-required.png"),
+        "douyin_login_screenshot": changing_file_url(DATA_DIR / "douyin" / "login-required.png"),
         "library": library() if library_data else None,
     }
 
@@ -193,7 +200,7 @@ async def save_config(request: Request):
     if platform in {"tiktok", "threads", "x", "douyin"}:
         label = {"tiktok": "TikTok", "threads": "Threads", "x": "X", "douyin": "抖音"}[platform]
         method = payload.get("login_method", saved.get("login_method", "password"))
-        if method not in {"password", "cookie"}:
+        if method not in ({"password", "cookie", "qrcode"} if platform == "douyin" else {"password", "cookie"}):
             raise HTTPException(400, "请选择账号密码或 Cookie 登录")
         cookie = str(payload.get("cookie", "")) or str(saved.get("cookie", ""))
         if method == "cookie":
@@ -218,6 +225,8 @@ async def save_config(request: Request):
     root = platform_dir(DATA_DIR, platform)
     root.mkdir(parents=True, exist_ok=True)
     (root / "login-paused.json").unlink(missing_ok=True)
+    if platform == "douyin" and selected.get("login_method") == "qrcode":
+        (root / "login-required.png").unlink(missing_ok=True)
     changed = saved.get("username") and saved.get("username") != username
     if platform in {"tiktok", "threads", "x", "douyin"}:
         changed = changed or saved.get("login_method") != selected["login_method"] or saved.get("cookie", "") != selected["cookie"]
