@@ -116,8 +116,8 @@ function renderStatus(globalStatus = {}) {
   }
   if (statusPlatform === 'douyin' && lastState?.config?.douyin?.login_method === 'phone' && status.state === 'running') {
     const smsState = lastState?.douyin_sms_state;
-    title = smsState === 'invalid' ? '验证码错误' : smsState === 'submitting' ? '正在验证' : '等待短信验证码';
-    detail = smsState === 'invalid' ? '请输入短信中的新验证码' : smsState === 'submitting' ? '正在完成抖音登录，请稍候' : '验证码已发送，请在设置中输入';
+    title = smsState === 'sending' ? '正在发送短信' : smsState === 'invalid' ? '验证码错误' : smsState === 'submitting' ? '正在验证' : '等待短信验证码';
+    detail = smsState === 'sending' ? '正在等待抖音确认发送结果' : smsState === 'invalid' ? '请输入短信中的新验证码' : smsState === 'submitting' ? '正在完成抖音登录，请稍候' : '验证码已发送，请在设置中输入';
   }
   elements.band.dataset.state = status.state || 'not_configured';
   elements.statusTitle.textContent = title;

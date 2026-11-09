@@ -469,22 +469,28 @@ class PlatformTests(unittest.TestCase):
         root.mkdir()
         write_json(root / "verification.json", {"code": "stale"})
         context, page = MagicMock(), MagicMock()
-        context.cookies.side_effect = [[], [{"name": "sessionid"}, {"name": "sid_tt"}]]
-        phone, code, send, submit = MagicMock(), MagicMock(), MagicMock(), MagicMock()
-        send_group, submit_group, empty = MagicMock(), MagicMock(), MagicMock()
+        context.cookies.side_effect = [[], [], [{"name": "sessionid"}, {"name": "sid_tt"}]]
+        phone, code, send, submit, tab = MagicMock(), MagicMock(), MagicMock(), MagicMock(), MagicMock()
+        send_group, tab_group, submit_group, empty = MagicMock(), MagicMock(), MagicMock(), MagicMock()
         send_group.count.return_value = 1
         send_group.nth.return_value = send
+        tab_group.count.return_value = 1
+        tab_group.nth.return_value = tab
+        tab.is_visible.return_value = True
         submit_group.count.return_value = 1
         submit_group.first = submit
         submit.is_visible.return_value = True
         empty.count.return_value = 0
-        page.get_by_text.return_value = send_group
+        response = MagicMock(status=200, url="https://login.douyin.com/passport/web/send_code/")
+        response.json.return_value = {"message": "success", "data": {"error_code": 0}}
+        page.on.side_effect = lambda event, callback: callback(response) if event == "response" else None
+        page.get_by_text.side_effect = lambda text, exact=True: tab_group if text == "验证码登录" else send_group
         page.locator.side_effect = lambda selector: submit_group if selector == "#douyin_login_comp_btn_id" else empty
         sent = False
 
         def wait(milliseconds):
             nonlocal sent
-            if milliseconds == 1500 and not sent:
+            if milliseconds == 1000 and not sent:
                 write_json(root / "verification.json", {"code": "123456"})
                 sent = True
 

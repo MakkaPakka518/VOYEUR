@@ -161,6 +161,21 @@ def visible(page, selector):
     return next((locator.nth(index) for index in range(locator.count()) if locator.nth(index).is_visible()), None)
 
 
+def capture_sms_response(response, state):
+    if "/passport/web/send_code/" not in response.url:
+        return
+    state["received"] = True
+    try:
+        payload = response.json()
+    except Exception:
+        state.update({"ok": False, "message": f"抖音短信接口返回 HTTP {response.status}"})
+        return
+    data = payload.get("data") or {}
+    code = data.get("error_code", payload.get("error_code", 0))
+    message = str(data.get("description") or payload.get("description") or payload.get("message") or "")
+    state.update({"ok": response.status < 400 and code in {0, "0", None} and message.lower() not in {"error", "failed"}, "message": message})
+
+
 def phone_login(context, page, config, root):
     state_path = root / "sms-state.json"
     verification_path = root / "verification.json"
@@ -168,6 +183,12 @@ def phone_login(context, page, config, root):
     (root / "login-required.png").unlink(missing_ok=True)
     page.goto(LOGIN_URL, wait_until="domcontentloaded", timeout=60_000)
     page.wait_for_timeout(2500)
+    tabs = page.get_by_text("验证码登录", exact=True)
+    tab = next((tabs.nth(index) for index in range(tabs.count()) if tabs.nth(index).is_visible()), None)
+    if not tab:
+        attention(page, root, "login_page_changed", "抖音登录页未显示验证码登录入口")
+    tab.click(timeout=10_000)
+    page.wait_for_timeout(500)
     phone = visible(page, '#normal-input, input[placeholder="请输入手机号"], input[placeholder="手机号"]')
     code_input = visible(page, '#button-input, input[placeholder="请输入验证码"]')
     send = page.get_by_text("获取验证码", exact=True)
@@ -175,11 +196,26 @@ def phone_login(context, page, config, root):
     if not phone or not code_input or not send:
         attention(page, root, "login_page_changed", "抖音登录页未显示手机号验证码表单")
     phone.fill(config.get("username", ""))
-    send.click(timeout=10_000)
-    page.wait_for_timeout(1500)
+    send_state = {}
+    capture = lambda response: capture_sms_response(response, send_state)
+    page.on("response", capture)
+    write_json(state_path, {"state": "sending"})
+    try:
+        send.click(timeout=10_000)
+        send_deadline = time.monotonic() + 15
+        while not send_state.get("received") and time.monotonic() < send_deadline:
+            page.wait_for_timeout(250)
+    finally:
+        page.remove_listener("response", capture)
     captcha = page.locator('#captcha-verify-image, #captcha_container, [class*="captcha"], iframe[src*="captcha"]')
     if any(captcha.nth(index).is_visible() for index in range(captcha.count())):
         attention(page, root, "manual_verification", "抖音发送短信前要求人工验证，请查看登录页面")
+    if not send_state.get("received"):
+        write_json(state_path, {"state": "error"})
+        raise DouyinError("sms_send_failed", "抖音阻止了这台 VPS 的短信请求，请改用 Cookie 或大陆网络节点")
+    if not send_state.get("ok"):
+        write_json(state_path, {"state": "error"})
+        raise DouyinError("sms_send_failed", send_state.get("message") or "抖音短信发送失败，请稍后重试")
     error = visible(page, "#error_text_id")
     message = error.inner_text().strip() if error else ""
     if message:
