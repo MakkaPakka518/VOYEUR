@@ -1,4 +1,6 @@
-# ig luv
+# IG Luv
+
+**English** | [简体中文](README.zh-CN.md)
 
 Private web panel and Playwright collector for Instagram, TikTok, Douyin, Threads and X profiles visible to your account. It keeps persistent browser sessions, overwrites each target's latest profile screenshot, archives newly observed posts, and downloads their text, images and videos.
 
@@ -67,11 +69,13 @@ value, and switch to **Cookie** login. The Cookie commonly contains `sessionid`,
 **QR code** login works without copying browser cookies. Save the protected QR preview from the panel,
 then open Douyin's scanner on the same phone and choose the saved image from Photos. The server keeps
 the browser session open for two minutes, stores the resulting session only in `data/douyin/profile/`,
-and continues collection after confirmation.
+and continues collection after confirmation. Douyin may refuse confirmation from datacenter or overseas IPs.
 
 **Phone** login sends a verification code to a Chinese mainland mobile number. Keep the panel open,
 enter the code in the verification section, and the collector completes login in the same persistent
 browser page. Codes are consumed immediately and are never stored in `config.json`.
+Douyin can silently block SMS requests from automated or datacenter browsers; the panel verifies the
+actual send response and reports this instead of showing a false waiting state.
 
 ## Threads
 
@@ -115,7 +119,7 @@ Everything is stored under `data/`:
 
 The panel has separate, directly loadable pages: `/` for all platforms, `/instagram`, `/tiktok`,
 `/douyin`, `/threads`, `/x`, and `/settings`. Desktop navigation includes all routes. The six-tab mobile
-bar contains the five platforms and settings; tap the `ig luv` wordmark for the combined view.
+bar contains the five platforms and settings; tap the `IG Luv` wordmark for the combined view.
 The settings page groups platform/login, target users, and collection frequency into native
 expandable sections, initially collapsed. Settings no longer appear below media.
 Instagram, TikTok, Threads and X icons are included locally from Simple Icons (CC0-1.0); Douyin uses the local musical-note mark.
