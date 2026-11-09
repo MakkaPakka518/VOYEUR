@@ -338,8 +338,9 @@ body, .status-band, .filter-group, .media-card, .settings-group, input, select, 
   .section-heading h2 { font-size: 16px; }
   .media-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
   .settings-section { padding-top: 24px; }
-  .bottom-nav { position: fixed; z-index: 12; left: 0; right: 0; bottom: 0; padding: 4px 4px max(16px, env(safe-area-inset-bottom)); display: grid; grid-template-columns: repeat(auto-fit, minmax(48px, 1fr)); gap: 4px; border-top: 0.5px solid var(--line); background: var(--bottom-nav); }
-  .bottom-nav a { min-height: 54px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; color: var(--ink-soft); font-size: 12px; text-decoration: none; }
+  .bottom-nav { position: fixed; z-index: 12; left: 0; right: 0; bottom: 0; padding: 4px 4px max(16px, env(safe-area-inset-bottom)); display: grid; grid-auto-flow: column; grid-auto-columns: minmax(52px, 1fr); gap: 4px; overflow-x: auto; overscroll-behavior-inline: contain; scrollbar-width: none; border-top: 0.5px solid var(--line); background: var(--bottom-nav); }
+  .bottom-nav::-webkit-scrollbar { display: none; }
+  .bottom-nav a { min-width: 52px; min-height: 54px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; color: var(--ink-soft); font-size: 12px; text-decoration: none; }
   .bottom-nav a.active { color: var(--coral-dark); }
   .bottom-nav svg { width: 21px; height: 21px; }
   .toast { right: 16px; bottom: calc(78px + env(safe-area-inset-bottom)); }

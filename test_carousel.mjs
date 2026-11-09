@@ -20,9 +20,10 @@ const fixture = () => ({
     threads: { targets: ['demo'], username: '', has_password: false, login_method: 'password', enabled: true, interval: 900, post_limit: 24, cleanup_days: 30 },
     x: { targets: ['demo'], username: '', has_password: false, has_cookie: true, login_method: 'cookie', enabled: false, interval: 3600, post_limit: 6, cleanup_days: 0 },
     douyin: { targets: ['MS4wLjAB_Test-ID'], username: '', has_password: false, has_cookie: true, login_method: 'password', enabled: true, interval: 300, post_limit: 12, cleanup_days: 14 },
+    wechat: { targets: ['moments'], username: '', has_password: false, login_method: 'desktop', enabled: true, interval: 900, post_limit: 6, cleanup_days: 7 },
   } : {}) },
   status: { state: 'ready', checked_at: '2026-11-08T10:00:00Z', ...(includePlatforms ? { platforms: {
-    instagram: { state: 'ready' }, tiktok: { state: 'error', error_code: 'verification_required' }, threads: { state: 'ready' }, x: { state: 'disabled' }, douyin: { state: 'ready' },
+    instagram: { state: 'ready' }, tiktok: { state: 'error', error_code: 'verification_required' }, threads: { state: 'ready' }, x: { state: 'disabled' }, douyin: { state: 'ready' }, wechat: { state: 'ready' },
   }} : {}) },
   library: [{ name: 'demo', status: { checked_at: `revision-${revision}` }, latest: '/files/photo/3.svg',
     items: Array.from({ length: 14 }, (_, i) => ({
@@ -48,6 +49,9 @@ const fixture = () => ({
   }] }, { name: 'MS4wLjAB_Test-ID', key: 'douyin:MS4wLjAB_Test-ID', platform: 'douyin', status: {}, latest: '/files/photo/2.svg', items: [{
     id: '7666666666666666666', caption: '抖音图文作品', captured_at: '2026-11-08T07:00:00Z', source_url: 'https://www.douyin.com/note/7666666666666666666',
     files: [{ name: 'media-01.jpg', kind: 'image', url: '/files/photo/2.svg' }, { name: 'page.png', kind: 'image', url: '/files/photo/3.svg' }],
+  }] }, { name: 'moments', key: 'wechat:moments', platform: 'wechat', status: {}, latest: null, items: [{
+    id: 'wechat-page', caption: '朋友圈页面快照 1', captured_at: '2026-11-08T06:00:00Z', source_url: '',
+    files: [{ name: 'media-01.png', kind: 'image', url: '/files/photo/1.svg' }],
   }] }] : [])],
 });
 const server = createServer(async (req, res) => {
@@ -82,7 +86,7 @@ const server = createServer(async (req, res) => {
     return;
   }
   try {
-    const path = url.pathname === '/login' ? '/static/login.html' : ['/', '/instagram', '/tiktok', '/douyin', '/threads', '/x', '/settings'].includes(url.pathname) ? '/static/index.html' : url.pathname;
+    const path = url.pathname === '/login' ? '/static/login.html' : ['/', '/instagram', '/tiktok', '/douyin', '/threads', '/x', '/moments', '/settings'].includes(url.pathname) ? '/static/index.html' : url.pathname;
     if (!path.startsWith('/static/') || path.includes('..')) throw new Error('Not found');
     res.setHeader('Content-Type', ({ '.js': 'text/javascript', '.css': 'text/css', '.html': 'text/html', '.svg': 'image/svg+xml' })[extname(path)] || 'application/octet-stream');
     res.end(await readFile(join(root, path)));
@@ -504,11 +508,17 @@ try {
     assert(await panel.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
     await panel.screenshot({ path: `${artifacts}/douyin-${width}.png` });
   }
+  const wechatTarget = panel.locator('.target-block[data-platform="wechat"]');
+  await navigate(panel, '/moments');
+  await wechatTarget.waitFor();
+  assert.equal(await panel.locator('#page-title').innerText(), '微信朋友圈');
+  assert.match(await wechatTarget.locator('.target-heading h3').innerText(), /我的朋友圈/);
+  assert.equal(await wechatTarget.locator('.target-actions a', { hasText: '打开主页' }).count(), 0);
   await navigate(panel, '/instagram');
   assert.equal(await tk.isVisible(), false);
   assert.equal(await panel.locator('.target-block[data-platform="instagram"]:visible').count(), 1);
   await navigate(panel, '/');
-  assert.equal(await panel.locator('.target-block:visible').count(), 5);
+  assert.equal(await panel.locator('.target-block:visible').count(), 6);
   await navigate(panel, '/settings');
   assert(await panel.locator('#library').isHidden());
   assert.equal(await panel.locator('.settings-group[open]').count(), 0);
@@ -592,6 +602,11 @@ try {
   await panel.locator('#settings-platform').selectOption('instagram');
   assert.equal(await panel.locator('#ig-username').inputValue(), 'demo');
   assert(await panel.locator('#cookie-field').isHidden());
+  await panel.locator('#settings-platform').selectOption('wechat');
+  assert(await panel.locator('#login-method-field').isHidden());
+  assert(await panel.locator('#targets-settings').isHidden());
+  assert(await panel.locator('#reset-session').isHidden());
+  assert.match(await panel.locator('#public-note').innerText(), /不读取聊天内容/);
   await panel.reload();
   await panel.locator('#settings-platform').waitFor({ state: 'attached' });
   assert.equal(panel.url(), `${base}/settings`);
@@ -653,7 +668,7 @@ try {
   assert(await mobilePreview.locator('#settings-platform').isHidden());
   await mobilePreview.setViewportSize({ width: 320, height: 844 });
   assert(await mobilePreview.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
-  assert.equal(await mobilePreview.locator('.bottom-nav a:visible').count(), 5);
+  assert.equal(await mobilePreview.locator('.bottom-nav a:visible').count(), 6);
   assert(await mobilePreview.locator('.bottom-nav a[href="/x"]').isHidden());
   for (const link of await mobilePreview.locator('.bottom-nav a:visible').all()) {
     const box = await link.boundingBox();

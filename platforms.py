@@ -1,11 +1,12 @@
 import json
 import re
+import shutil
 import time
 from pathlib import Path
 from urllib.parse import urlparse
 
 
-PLATFORMS = ("instagram", "tiktok", "threads", "x", "douyin")
+PLATFORMS = ("instagram", "tiktok", "threads", "x", "douyin", "wechat")
 USERNAME_RE = re.compile(r"^[a-z0-9._]+$")
 DOUYIN_TARGET_RE = re.compile(r"^[A-Za-z0-9_-]{1,160}$")
 
@@ -85,6 +86,12 @@ def cleanup_platform_media(data_dir, platform, older_than_days=None):
         if not items.exists():
             continue
         for item in (path for path in items.iterdir() if path.is_dir()):
+            if platform == "wechat":
+                screenshots = list(item.glob("*.png"))
+                if screenshots and (cutoff is None or min(path.stat().st_mtime for path in screenshots) < cutoff):
+                    removed["screenshots"] += len(screenshots)
+                    shutil.rmtree(item)
+                continue
             remove(item / "page.png", "screenshots")
             for video in item.glob("*.mp4"):
                 remove(video, "videos")

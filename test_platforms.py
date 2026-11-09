@@ -51,11 +51,15 @@ class PlatformTests(unittest.TestCase):
     def save_douyin(self, **options):
         return self.client.post("/api/config", json={"platform": "douyin", "targets": ["https://www.douyin.com/user/MS4wLjAB_Test-ID"], "username": "", "password": "", **options})
 
+    def save_wechat(self, **options):
+        return self.client.post("/api/config", json={"platform": "wechat", "targets": [], "username": "", "password": "", "enabled": True, **options})
+
     def test_config_preserves_instagram_and_hides_both_secrets(self):
         self.assertEqual(self.save_tiktok(interval=60, post_limit=6, cleanup_days=7).status_code, 200)
         self.assertEqual(self.save_threads(interval=900, post_limit=24, cleanup_days=30).status_code, 200)
         self.assertEqual(self.save_x().status_code, 200)
         self.assertEqual(self.save_douyin().status_code, 200)
+        self.assertEqual(self.save_wechat(interval=900, post_limit=6).status_code, 200)
         saved = read_json(self.root / "config.json", {})
         self.assertEqual(saved["password"], "ig-secret")
         self.assertEqual(saved["targets"], ["demo"])
@@ -72,13 +76,14 @@ class PlatformTests(unittest.TestCase):
         self.assertNotIn("th-secret", str(response))
         self.assertNotIn("x-secret", str(response))
         self.assertEqual(response["config"]["douyin"]["targets"], ["MS4wLjAB_Test-ID"])
+        self.assertEqual(response["config"]["wechat"]["targets"], ["moments"])
         self.assertEqual(response["config"]["tiktok"]["post_limit"], 6)
         self.client.post("/api/config", json={**self.ig, "password": ""})
         self.assertEqual(read_json(self.root / "config.json", {})["tiktok"]["password"], "tk-secret")
 
     def test_separate_pages_are_authenticated_and_directly_loadable(self):
         self.assertEqual(self.client.get("/api/auth-check").status_code, 200)
-        for path in ("/", "/instagram", "/tiktok", "/threads", "/x", "/douyin", "/settings"):
+        for path in ("/", "/instagram", "/tiktok", "/threads", "/x", "/douyin", "/moments", "/settings"):
             response = self.client.get(path)
             self.assertEqual(response.status_code, 200)
             self.assertIn("text/html", response.headers["content-type"])
@@ -141,9 +146,15 @@ class PlatformTests(unittest.TestCase):
         self.assertEqual(self.save_douyin(login_method="phone", username="12345").status_code, 400)
         self.assertEqual(self.save_x(enabled=False, targets=[]).status_code, 200)
         self.assertFalse(self.client.get("/api/state").json()["config"]["x"]["enabled"])
+        config = read_json(self.root / "config.json", {})
+        config.pop("wechat", None)
+        write_json(self.root / "config.json", config)
+        response = self.client.post("/api/config", json={"platform": "wechat", "targets": [], "interval": 300, "post_limit": 6})
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(read_json(self.root / "config.json", {})["wechat"]["enabled"])
 
     def test_library_and_deletion_isolate_same_username_and_post_id(self):
-        for folder in (self.root, self.root / "tiktok", self.root / "threads", self.root / "x", self.root / "douyin"):
+        for folder in (self.root, self.root / "tiktok", self.root / "threads", self.root / "x", self.root / "douyin", self.root / "wechat"):
             directory = folder / "targets/demo/items/123"
             directory.mkdir(parents=True)
             (directory / "media-01.jpg").write_bytes(b"image")
@@ -154,7 +165,7 @@ class PlatformTests(unittest.TestCase):
         incomplete.mkdir(parents=True)
         (incomplete / "page.png").write_bytes(b"partial")
         library = self.client.get("/api/state").json()["library"]
-        self.assertEqual([item["key"] for item in library], ["demo", "tiktok:demo", "threads:demo", "x:demo", "douyin:demo"])
+        self.assertEqual([item["key"] for item in library], ["demo", "tiktok:demo", "threads:demo", "x:demo", "douyin:demo", "wechat:demo"])
         self.assertTrue(library[1]["items"][0]["files"][0]["url"].startswith("/files/tiktok/"))
         self.assertEqual(len(library[1]["items"][0]["files"]), 2)
         self.assertEqual([item["id"] for item in library[-1]["items"]], ["123"])
@@ -210,6 +221,14 @@ class PlatformTests(unittest.TestCase):
         self.assertEqual((removed["screenshots"], removed["videos"]), (1, 1))
         self.assertTrue((item / "page.png").exists())
         self.assertTrue((item / "media-03.mp4").exists())
+
+        wechat_item = self.root / "wechat/targets/moments/items/page1"
+        wechat_item.mkdir(parents=True)
+        (wechat_item / "media-01.png").write_bytes(b"capture")
+        write_json(wechat_item / "metadata.json", {"captured_at": "2026-11-08T00:00:00Z"})
+        result = self.client.delete("/api/cleanup?platform=wechat").json()
+        self.assertEqual(result["screenshots"], 1)
+        self.assertFalse(wechat_item.exists())
 
     def test_verification_and_reset_are_platform_scoped(self):
         self.assertEqual(self.client.post("/api/verification?platform=tiktok", json={"code": "123456"}).status_code, 200)

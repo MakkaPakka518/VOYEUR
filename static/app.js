@@ -33,7 +33,7 @@ let lastState;
 let librarySignature = '';
 let selectedPlatform = 'instagram';
 let activePlatform = 'all';
-const platformNames = { instagram: 'Instagram', tiktok: 'TikTok', douyin: '抖音', threads: 'Threads', x: 'X' };
+const platformNames = { instagram: 'Instagram', tiktok: 'TikTok', douyin: '抖音', threads: 'Threads', x: 'X', wechat: '微信' };
 const preview = createMediaPreview(document.querySelector('#media-preview'));
 const themeToggle = createThemeToggle([...document.querySelectorAll('.theme-toggle')]);
 const pages = {
@@ -43,6 +43,7 @@ const pages = {
   '/threads': { title: 'Threads', platform: 'threads' },
   '/x': { title: 'X', platform: 'x' },
   '/douyin': { title: '抖音', platform: 'douyin' },
+  '/moments': { title: '微信朋友圈', platform: 'wechat' },
   '/settings': { title: '设置', platform: 'all' },
 };
 let currentPage = '';
@@ -98,6 +99,7 @@ function renderStatus(globalStatus = {}) {
     douyin_blocked: ['抖音需要处理', status.error || '请更新 Cookie 或完成验证'],
     sms_send_failed: ['短信发送失败', status.error || '请检查手机号后重试'],
     sms_login_required: ['验证码已超时', '重新保存手机号以发送新的验证码'],
+    wechat_capture_failed: ['朋友圈采集失败', status.error || '请确认 Linux 微信已登录并可打开朋友圈'],
     rate_limited: [`${brand} 请求过于频繁`, status.error || '请稍后重试或更新 Cookie'],
   };
   const labels = {
@@ -186,7 +188,7 @@ function renderLibrary(library) {
   const hasContent = library.some(target => target.latest || target.items.length);
   if (!hasContent) {
     elements.library.innerHTML = `
-      <div class="empty-state"><div><h3>还没有收藏</h3><p>配置 Instagram、TikTok、抖音、Threads 或 X 关注用户，首次检查后内容会出现在这里。</p><a href="/settings" data-route>前往采集设置</a></div></div>`;
+      <div class="empty-state"><div><h3>还没有收藏</h3><p>配置 Instagram、TikTok、抖音、Threads、X 或微信，首次检查后内容会出现在这里。</p><a href="/settings" data-route>前往采集设置</a></div></div>`;
     syncImageGroups(elements.library);
     return;
   }
@@ -194,14 +196,15 @@ function renderLibrary(library) {
   const mediaGroup = (kind, label, cards, open = false) => cards ? `<details class="media-kind-group" data-media-group="${kind}"${open ? ' open' : ''}><summary>${label}</summary><div class="media-grid">${cards}</div></details>` : '';
   template.innerHTML = library.map(target => {
     const platform = target.platform || 'instagram', key = target.key || target.name;
-    const profileUrl = platform === 'tiktok' ? `https://www.tiktok.com/@${encodeURIComponent(target.name)}` : platform === 'douyin' ? `https://www.douyin.com/user/${encodeURIComponent(target.name)}` : platform === 'threads' ? `https://www.threads.com/@${encodeURIComponent(target.name)}` : platform === 'x' ? `https://x.com/${encodeURIComponent(target.name)}` : `https://www.instagram.com/${encodeURIComponent(target.name)}/`;
+    const wechat = platform === 'wechat';
+    const profileUrl = platform === 'tiktok' ? `https://www.tiktok.com/@${encodeURIComponent(target.name)}` : platform === 'douyin' ? `https://www.douyin.com/user/${encodeURIComponent(target.name)}` : platform === 'threads' ? `https://www.threads.com/@${encodeURIComponent(target.name)}` : platform === 'x' ? `https://x.com/${encodeURIComponent(target.name)}` : platform === 'instagram' ? `https://www.instagram.com/${encodeURIComponent(target.name)}/` : '';
     const photos = imageGroupsMarkup(target, 'image');
     const screenshots = imageGroupsMarkup(target, 'screenshot');
     const videos = target.items.filter(item => item.files.some(file => file.kind === 'video')).map(item => mediaCard(target, item)).join('');
     const textCards = target.items.filter(item => item.files.some(file => file.kind === 'text') && !item.files.some(file => file.kind === 'video' || (file.kind === 'image' && file.name !== 'page.png'))).map(item => textCard(target, item)).join('');
     const state = target.status.error ? escapeHtml(targetState(target.status)) : target.status.failed_items?.length ? `${target.items.length} 条归档，${target.status.failed_items.length} 条待重试` : `${target.items.length} 条归档`;
     return `<section class="target-block" data-target-key="${escapeHtml(key)}" data-platform="${platform}">
-      <div class="target-heading"><h3><span class="platform-name"><svg class="platform-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="/static/icons/platforms.svg#${platform}"/></svg>${platformNames[platform]}</span>@${escapeHtml(target.name)} <span class="rail-state">${state}</span></h3><div class="target-actions"><a href="${profileUrl}" target="_blank" rel="noreferrer">打开主页</a><button class="delete-button" type="button" data-platform="${platform}" data-target="${escapeHtml(target.name)}">删除此用户</button></div></div>
+      <div class="target-heading"><h3><span class="platform-name"><svg class="platform-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="/static/icons/platforms.svg#${platform}"/></svg>${platformNames[platform]}</span>${wechat ? '我的朋友圈' : `@${escapeHtml(target.name)}`} <span class="rail-state">${state}</span></h3><div class="target-actions">${profileUrl ? `<a href="${profileUrl}" target="_blank" rel="noreferrer">打开主页</a>` : ''}<button class="delete-button" type="button" data-platform="${platform}" data-target="${escapeHtml(target.name)}">删除此用户</button></div></div>
       <div class="media-groups">${mediaGroup('image', '图片', photos, true)}${mediaGroup('video', '视频', videos)}${mediaGroup('text', '文字', textCards)}${mediaGroup('screenshot', '截图', screenshots)}</div>
     </section>`;
   }).join('');
@@ -280,7 +283,7 @@ function hydrateForm(config) {
   elements.cleanupDays.value = String(selected.cleanup_days || 0);
   elements.password.placeholder = selected.has_password ? '已保存，留空保持不变' : '输入登录密码';
   elements.passwordNote.textContent = selected.has_password ? '已保存，留空保持不变' : `用于建立 ${platformNames[selectedPlatform]} 浏览器会话`;
-  elements.loginMethod.value = selected.login_method || 'password';
+  elements.loginMethod.value = selectedPlatform === 'wechat' ? 'password' : selected.login_method || 'password';
   elements.cookie.placeholder = selected.has_cookie ? '已保存，留空保持不变' : 'sessionid=...; sessionid_ss=...';
   document.querySelector('#targets-summary').textContent = selected.targets?.length ? `${selected.targets.length} 位用户` : '未设置';
   updateLoginFields();
@@ -288,7 +291,7 @@ function hydrateForm(config) {
 }
 
 function updateLoginFields() {
-  const external = selectedPlatform !== 'instagram', douyin = selectedPlatform === 'douyin';
+  const external = selectedPlatform !== 'instagram', douyin = selectedPlatform === 'douyin', wechat = selectedPlatform === 'wechat';
   const qrOption = document.querySelector('#login-method option[value="qrcode"]');
   const phoneOption = document.querySelector('#login-method option[value="phone"]');
   qrOption.hidden = qrOption.disabled = !douyin;
@@ -298,20 +301,22 @@ function updateLoginFields() {
   document.querySelector('#login-method option[value="password"]').textContent = douyin ? '公开模式' : '账号密码';
   document.querySelector('#account-label').textContent = phone ? '中国大陆手机号' : `${platformNames[selectedPlatform]} 账号`;
   document.querySelector('#password-label').textContent = `${platformNames[selectedPlatform]} 密码`;
-  document.querySelector('#login-method-field').hidden = !external;
+  document.querySelector('#login-method-field').hidden = !external || wechat;
   document.querySelector('#login-method-label').textContent = `${platformNames[selectedPlatform]} 登录方式`;
   document.querySelector('#cookie-field').hidden = !cookie;
   document.querySelector('#cookie-label').textContent = `${platformNames[selectedPlatform]} Cookie`;
   document.querySelector('#cookie-note').textContent = `从已登录 ${platformNames[selectedPlatform]} 的浏览器网络请求中复制 Cookie 请求头的值。`;
-  document.querySelector('#public-note').hidden = !external || cookie;
-  document.querySelector('#public-note').textContent = phone ? '保存设置后会发送短信验证码，并在当前浏览器会话中等待输入。' : qrcode ? '打开二维码后长按图片并“存储到照片”，再用抖音扫一扫从相册选择。二维码有效期约 2 分钟。' : douyin ? '公开访问受限时，请使用手机号、二维码或已登录浏览器的 Cookie。' : `采集公开 ${platformNames[selectedPlatform]} 账号时，账号和密码可以都留空。`;
-  elements.username.closest('label').hidden = cookie || (douyin && !phone);
-  elements.password.closest('label').hidden = cookie || douyin;
+  document.querySelector('#public-note').hidden = (!external || cookie) && !wechat;
+  document.querySelector('#public-note').textContent = wechat ? '由测试机上的官方 Linux 微信采集朋友圈窗口快照，不读取聊天内容。' : phone ? '保存设置后会发送短信验证码，并在当前浏览器会话中等待输入。' : qrcode ? '打开二维码后长按图片并“存储到照片”，再用抖音扫一扫从相册选择。二维码有效期约 2 分钟。' : douyin ? '公开访问受限时，请使用手机号、二维码或已登录浏览器的 Cookie。' : `采集公开 ${platformNames[selectedPlatform]} 账号时，账号和密码可以都留空。`;
+  elements.username.closest('label').hidden = wechat || cookie || (douyin && !phone);
+  elements.password.closest('label').hidden = wechat || cookie || douyin;
   elements.username.required = elements.enabled.checked && (!external || phone);
-  elements.targets.required = elements.enabled.checked;
+  elements.targets.required = elements.enabled.checked && !wechat;
   elements.username.placeholder = phone ? '输入 11 位手机号' : selectedPlatform === 'x' ? 'X 用户名' : external ? '邮箱或用户名' : '手机号、邮箱或用户名';
   elements.targets.placeholder = douyin ? '抖音主页链接或 sec_user_id' : '例如 instagram, natgeo';
   document.querySelector('#targets-note').textContent = douyin ? '粘贴 www.douyin.com/user/... 主页链接，多个用逗号分隔' : '多个用户名用逗号分隔，不需要输入 @';
+  document.querySelector('#targets-settings').hidden = wechat;
+  document.querySelector('#reset-session').hidden = wechat;
   document.querySelector('#reset-session').textContent = `重置 ${platformNames[selectedPlatform]} 会话`;
   document.querySelector('#platform-summary').textContent = `${platformNames[selectedPlatform]}${elements.enabled.checked ? '' : '（已关闭）'}`;
   document.querySelector('#schedule-summary').textContent = `${elements.interval.selectedOptions[0]?.textContent || ''}，${elements.postLimit.selectedOptions[0]?.textContent || ''}`;
@@ -424,9 +429,9 @@ elements.form.addEventListener('submit', async event => {
         enabled: elements.enabled.checked,
         login_method: elements.loginMethod.value,
         cookie: elements.cookie.value,
-        username: elements.username.value,
+        username: selectedPlatform === 'wechat' ? '' : elements.username.value,
         password: elements.password.value,
-        targets: elements.targets.value,
+        targets: selectedPlatform === 'wechat' ? 'moments' : elements.targets.value,
         interval: Number(elements.interval.value),
         post_limit: Number(elements.postLimit.value),
         cleanup_days: Number(elements.cleanupDays.value),
@@ -515,6 +520,7 @@ function showPage(path, focus = false) {
     link.classList.toggle('active', active);
     if (active) link.setAttribute('aria-current', 'page'); else link.removeAttribute('aria-current');
   });
+  if (innerWidth <= 860) document.querySelector('.bottom-nav a.active:not([hidden])')?.scrollIntoView({ block: 'nearest', inline: 'center' });
   document.querySelectorAll('.filter').forEach(button => {
     const active = button.dataset.filter === activeFilter;
     button.classList.toggle('active', active);

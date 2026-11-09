@@ -1,0 +1,16 @@
+[Unit]
+Description=IG Luv WeChat Moments host collector
+After=network.target
+
+[Service]
+Type=simple
+Environment=DATA_DIR=/opt/ig-luv/data
+Environment=DISPLAY=:2
+Environment=XAUTHORITY=/mnt/data/wechat-home/.Xauthority
+ExecStart=/usr/bin/python3 /opt/ig-luv/wechat_moments_host.py
+Restart=on-failure
+RestartSec=10
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

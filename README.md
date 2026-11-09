@@ -2,7 +2,7 @@
 
 **English** | [简体中文](README.zh-CN.md)
 
-Private web panel and Playwright collector for Instagram, TikTok, Douyin, Threads and X profiles visible to your account. It keeps persistent browser sessions, overwrites each target's latest profile screenshot, archives newly observed posts, and downloads their text, images and videos.
+Private web panel and collectors for Instagram, TikTok, Douyin, Threads, X and WeChat Moments visible to your account. It keeps persistent sessions, archives newly observed content, and downloads available text, images and videos.
 
 ## Features
 
@@ -12,6 +12,7 @@ Private web panel and Playwright collector for Instagram, TikTok, Douyin, Thread
 - Douyin public collection and Cookie import.
 - Threads public collection plus account/password and Cookie login fallbacks.
 - X public collection plus account/password and Cookie login fallbacks.
+- WeChat Moments viewport capture through the signed-in official Linux client.
 - Platform-specific configuration, sessions, archives, status and deletion.
 - Per-platform enable switch, polling interval, recent-post limit and automatic cleanup age.
 - Per-post screenshots plus original images and MP4 videos.
@@ -87,6 +88,20 @@ Posts with photos or video use the existing carousel and native player. Pure tex
 the collector stores their full text in `metadata.json` and `content.txt`, keeps a page screenshot, and
 shows them as downloadable cards under the **Text** media filter.
 
+## WeChat Moments
+
+WeChat Moments uses the official Linux WeChat session on the host. The first implementation captures an
+already-open standalone Moments window, scrolls several viewport pages, hashes them for deduplication and
+imports only those cropped window images into `data/wechat/`. It does not read chat databases, comments,
+likes or contacts. Structured post text and original media require separate `sns.db` enrollment and are
+not included in this screenshot-based version. The platform is disabled by default; after enabling it,
+keep the standalone Moments window open so the host collector can capture it without touching chats.
+
+Host requirements: official Linux WeChat, an active X11 desktop, `xdotool`, `xprop`, ImageMagick's
+`import`, and Python 3. Install `deploy/ig-luv-wechat.service` as a systemd service after adjusting
+`DISPLAY`, `XAUTHORITY` and paths for your host. The service intentionally runs outside Docker and only
+writes normalized captures into IG Luv's `data/wechat/` directory.
+
 ## X
 
 Choose **X** in settings and enter target handles without `@`. Public profiles can be tried without
@@ -111,6 +126,7 @@ Everything is stored under `data/`:
 - `data/douyin/`: Douyin browser profile, seen-post IDs, screenshots and `targets/` archives.
 - `data/threads/`: Threads browser profile, seen-post IDs, verification, screenshots and `targets/` archives.
 - `data/x/`: X browser profile, seen-post IDs, screenshots and `targets/` archives.
+- `data/wechat/`: WeChat Moments viewport captures and host-collector status.
 - `data/config.json` retains the original Instagram fields and adds separate `tiktok`, `douyin`, `threads` and `x` objects.
 
 `data/` is ignored by git. Back it up if you want to keep the session and archive.
@@ -118,8 +134,8 @@ Everything is stored under `data/`:
 ## Image viewer
 
 The panel has separate, directly loadable pages: `/` for all platforms, `/instagram`, `/tiktok`,
-`/douyin`, `/threads`, `/x`, and `/settings`. Desktop navigation includes all routes. The six-tab mobile
-bar contains the five platforms and settings; tap the `IG Luv` wordmark for the combined view.
+`/douyin`, `/threads`, `/x`, `/moments`, and `/settings`. Desktop navigation includes all routes. The mobile
+bar scrolls horizontally when necessary; tap the `IG Luv` wordmark for the combined view.
 The settings page groups platform/login, target users, and collection frequency into native
 expandable sections, initially collapsed. Settings no longer appear below media.
 Instagram, TikTok, Threads and X icons are included locally from Simple Icons (CC0-1.0); Douyin uses the local musical-note mark.

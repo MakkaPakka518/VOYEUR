@@ -89,6 +89,7 @@ def logout():
 @app.get("/threads")
 @app.get("/x")
 @app.get("/douyin")
+@app.get("/moments")
 @app.get("/settings")
 def index():
     return FileResponse(ROOT / "static" / "index.html")
@@ -155,6 +156,9 @@ def state(library_data: bool = True):
     threads = config.get("threads", {})
     x = config.get("x", {})
     douyin = config.get("douyin", {})
+    wechat = config.get("wechat", {})
+    status = read_json(STATUS_PATH, {"state": "not_configured"})
+    status.setdefault("platforms", {})["wechat"] = read_json(DATA_DIR / "wechat" / "status.json", {"state": "not_configured"})
     return {
         "config": {
             "targets": config.get("targets", []),
@@ -168,8 +172,9 @@ def state(library_data: bool = True):
             "threads": {"targets": threads.get("targets", []), "username": threads.get("username", ""), "has_password": bool(threads.get("password")), "has_cookie": bool(threads.get("cookie")), "login_method": threads.get("login_method", "password"), "enabled": threads.get("enabled", True), "interval": threads.get("interval", config.get("interval", 300)), "post_limit": threads.get("post_limit", config.get("post_limit", 12)), "cleanup_days": threads.get("cleanup_days", 0)},
             "x": {"targets": x.get("targets", []), "username": x.get("username", ""), "has_password": bool(x.get("password")), "has_cookie": bool(x.get("cookie")), "login_method": x.get("login_method", "password"), "enabled": x.get("enabled", True), "interval": x.get("interval", config.get("interval", 300)), "post_limit": x.get("post_limit", config.get("post_limit", 12)), "cleanup_days": x.get("cleanup_days", 0)},
             "douyin": {"targets": douyin.get("targets", []), "username": douyin.get("username", ""), "has_password": False, "has_cookie": bool(douyin.get("cookie")), "login_method": douyin.get("login_method", "password"), "enabled": douyin.get("enabled", True), "interval": douyin.get("interval", config.get("interval", 300)), "post_limit": douyin.get("post_limit", config.get("post_limit", 12)), "cleanup_days": douyin.get("cleanup_days", 0)},
+            "wechat": {"targets": ["moments"], "username": "", "has_password": False, "has_cookie": False, "login_method": "desktop", "enabled": wechat.get("enabled", False), "interval": wechat.get("interval", config.get("interval", 300)), "post_limit": wechat.get("post_limit", config.get("post_limit", 12)), "cleanup_days": wechat.get("cleanup_days", 0)},
         },
-        "status": read_json(STATUS_PATH, {"state": "not_configured"}),
+        "status": status,
         "login_screenshot": changing_file_url(DATA_DIR / "login-required.png"),
         "tiktok_login_screenshot": changing_file_url(DATA_DIR / "tiktok" / "login-required.png"),
         "threads_login_screenshot": changing_file_url(DATA_DIR / "threads" / "login-required.png"),
@@ -193,11 +198,11 @@ async def save_config(request: Request):
     saved = existing if platform == "instagram" else existing.get(platform, {})
     password = str(payload.get("password", "")) or str(saved.get("password", ""))
     username = str(payload.get("username", "")).strip()
-    enabled = payload.get("enabled", saved.get("enabled", True))
+    enabled = payload.get("enabled", saved.get("enabled", False if platform == "wechat" else True))
     if not isinstance(enabled, bool):
         raise HTTPException(400, "平台开关必须为布尔值")
     try:
-        targets = target_list(payload.get("targets", []), platform)
+        targets = target_list(["moments"] if platform == "wechat" else payload.get("targets", []), platform)
         interval = max(60, min(86_400, int(payload.get("interval", saved.get("interval", existing.get("interval", 300))))))
         cleanup_days = max(0, min(3650, int(payload.get("cleanup_days", saved.get("cleanup_days", 0)))))
         post_limit = max(1, min(24, int(payload.get("post_limit", saved.get("post_limit", existing.get("post_limit", 12))))))
