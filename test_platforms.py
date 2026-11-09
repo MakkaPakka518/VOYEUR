@@ -77,11 +77,13 @@ class PlatformTests(unittest.TestCase):
         self.assertEqual(read_json(self.root / "config.json", {})["tiktok"]["password"], "tk-secret")
 
     def test_separate_pages_are_authenticated_and_directly_loadable(self):
+        self.assertEqual(self.client.get("/api/auth-check").status_code, 200)
         for path in ("/", "/instagram", "/tiktok", "/threads", "/x", "/douyin", "/settings"):
             response = self.client.get(path)
             self.assertEqual(response.status_code, 200)
             self.assertIn("text/html", response.headers["content-type"])
         with TestClient(web.app) as guest:
+            self.assertEqual(guest.get("/api/auth-check").status_code, 401)
             response = guest.get("/settings", follow_redirects=False)
             self.assertEqual(response.status_code, 303)
             self.assertEqual(response.headers["location"], "/login")

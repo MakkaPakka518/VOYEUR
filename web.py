@@ -51,6 +51,11 @@ def health():
     return {"ok": True}
 
 
+@app.get("/api/auth-check")
+def auth_check():
+    return {"ok": True}
+
+
 @app.get("/login")
 def login_page(request: Request):
     if authenticated(request):
