@@ -1,5 +1,6 @@
 // src/lib/motion-core/ink-spread-carousel.mjs
 import { createSurface } from "./motion-runtime.js";
+import { t } from "../../i18n.js";
 
 // LeiBox native source, adapted for ig luv. Design reference: Lorenzo Cabra
 // https://leibox.pantoria.cn/docs/animations/ink-spread-carousel
@@ -185,8 +186,9 @@ function createInkSpreadCarousel(target, initial, CSS2, MARKUP2, ATLAS2, SLIDES2
     last = 0;
   }
   function announce() {
-    photo.setAttribute("aria-label", `切换图片。点击左侧上一张，右侧下一张，也可使用方向键。${index + 1} / ${slides.length}。${slides[index].alt}`);
-    status.textContent = `${index + 1} / ${slides.length}。${slides[index].alt}`;
+    const params = { current: index + 1, total: slides.length, alt: slides[index].alt };
+    photo.setAttribute("aria-label", t('carousel.control', params));
+    status.textContent = t('carousel.status', params);
   }
   function finish() {
     stop();
@@ -207,7 +209,8 @@ function createInkSpreadCarousel(target, initial, CSS2, MARKUP2, ATLAS2, SLIDES2
   }
   function tick(now) {
     frame = 0;
-    if (dead || !visible || scope.document.hidden || progress >= 1) return;
+    if (dead || !visible || scope.document.hidden) return;
+    if (progress >= 1) return finish();
     elapsed += last ? now - last : 0;
     last = now;
     const t = clamp(elapsed / clamp(options.duration ?? 900, 250, 2400), 0, 1);
@@ -378,11 +381,11 @@ function createInkSpreadCarousel(target, initial, CSS2, MARKUP2, ATLAS2, SLIDES2
     if (sources !== void 0) {
       if (!Array.isArray(sources) || sources.length < 1 || sources.length > 12 || sources.some((item) => !(typeof item === "string" ? item : item?.src))) {
         error.hidden = false;
-        error.textContent = "Choose between 1 and 12 images.";
+        error.textContent = t('carousel.invalid');
         scene.dataset.loading = "false";
         return;
       }
-      incoming = sources.map((item, i) => ({ src: typeof item === "string" ? item : item.src, alt: typeof item === "string" ? `Photo ${i + 1}` : item.alt || `Photo ${i + 1}`, rect: [0, 0, 1, 1] }));
+      incoming = sources.map((item, i) => ({ src: typeof item === "string" ? item : item.src, alt: typeof item === "string" ? t('carousel.photo', { count: i + 1 }) : item.alt || t('carousel.photo', { count: i + 1 }), rect: [0, 0, 1, 1] }));
     }
     scene.dataset.loading = "true";
     try {
@@ -419,7 +422,7 @@ function createInkSpreadCarousel(target, initial, CSS2, MARKUP2, ATLAS2, SLIDES2
       if (dead || version !== loadVersion) return;
       scene.dataset.loading = "false";
       error.hidden = false;
-      error.textContent = "Could not load these images. The previous photos are still available.";
+      error.textContent = t('carousel.failed');
       status.textContent = error.textContent;
     }
   }
@@ -530,8 +533,9 @@ function mountInkSpreadCarousel(target, options = {}) {
     :host([data-reduced-motion=true]) *{transition:none!important}
   `;
   const markup = MARKUP.replace('<main ', '<div ').replace('</main>', '</div>')
-    .replace('Ink spread image carousel', '墨水扩散图片轮播')
-    .replace('Four surreal alpine photographs', '图片轮播');
+    .replace('Ink spread image carousel', t('carousel.region'))
+    .replace('Four surreal alpine photographs', t('carousel.label'))
+    .replace('切换图片：左侧上一张，右侧下一张', t('carousel.label'));
   return createInkSpreadCarousel(target, options, styles, markup, ATLAS, SLIDES);
 }
 export {

@@ -7,7 +7,10 @@ Type=simple
 User=wechat
 Group=wechat
 Environment=DATA_DIR=/opt/ig-luv/data
-Environment=WECHAT_ACCOUNT_DIR=/mnt/data/wechat-home/xwechat_files/REPLACE_ME/db_storage
+Environment=WECHAT_HOME=/mnt/data/wechat-home
+Environment=WECHAT_SNS_TOOL=/mnt/data/wechat-tools/wechat-sns-source
+Environment=WXEXTRACT=/mnt/data/wechat-tools/wxextract
+EnvironmentFile=-/etc/ig-luv/wechat.env
 ExecStartPre=+/usr/bin/install -d -o wechat -g wechat -m 700 /opt/ig-luv/data/wechat
 ExecStart=/usr/bin/python3 /opt/ig-luv/wechat_moments_host.py
 Restart=on-failure

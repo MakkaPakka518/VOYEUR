@@ -1,0 +1,14 @@
+[Unit]
+Description=Local noVNC for WeChat desktop
+After=wechat-desktop.service
+Requires=wechat-desktop.service
+
+[Service]
+Type=simple
+EnvironmentFile=-/etc/ig-luv/wechat.env
+ExecStart=/bin/sh -c 'exec /usr/bin/websockify --web=/usr/share/novnc "${NOVNC_BIND:-172.21.0.1:6080}" localhost:5902'
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

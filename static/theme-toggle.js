@@ -1,4 +1,5 @@
 import { mountPixelToggle } from './components/pixel-toggle/PixelToggleEngine.js';
+import { t } from './i18n.js';
 
 const STORAGE_KEY = 'ig-luv-theme';
 
@@ -22,11 +23,13 @@ export function createThemeToggle(hosts) {
   }
 
   hosts.forEach(host => {
-    instances.push(mountPixelToggle(host, {
+    const instance = mountPixelToggle(host, {
       checked: theme === 'light',
       sound: false,
       onCheckedChange: checked => apply(checked ? 'light' : 'dark'),
-    }));
+    });
+    instance.root.querySelector('.pixel-switch').setAttribute('aria-label', t('action.theme'));
+    instances.push(instance);
   });
   const storage = event => { if (event.key === STORAGE_KEY && event.newValue) apply(event.newValue, false); };
   window.addEventListener('storage', storage);

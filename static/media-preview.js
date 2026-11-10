@@ -1,3 +1,5 @@
+import { t } from './i18n.js';
+
 /** Native modal media viewer. Owns loading handlers, playback and scroll restoration. */
 export function createMediaPreview(dialog) {
   const document = dialog.ownerDocument, window = document.defaultView;
@@ -36,8 +38,8 @@ export function createMediaPreview(dialog) {
       Object.assign(document.body.style, { position: 'fixed', top: `-${scrollY}px`, left: '0', width: `${width}px`, overflow: 'hidden' });
     }
     document.querySelectorAll('video').forEach(video => video.pause());
-    title.textContent = item.title || '媒体预览';
-    message.textContent = '正在载入…';
+    title.textContent = item.title || t('preview.title');
+    message.textContent = t('preview.loading');
     message.hidden = false;
     url.searchParams.set('download', '1');
     download.href = url.pathname + url.search;
@@ -48,10 +50,10 @@ export function createMediaPreview(dialog) {
       media.controls = true;
       media.playsInline = true;
       media.preload = 'metadata';
-    } else media.alt = item.title || '原图';
+    } else media.alt = item.title || t('preview.original');
     mediaListeners = new AbortController();
     media.addEventListener(video ? 'loadedmetadata' : 'load', () => { message.hidden = true; }, { signal: mediaListeners.signal });
-    media.addEventListener('error', () => { message.textContent = '媒体加载失败，请关闭后重试。'; message.hidden = false; }, { signal: mediaListeners.signal });
+    media.addEventListener('error', () => { message.textContent = t('preview.failed'); message.hidden = false; }, { signal: mediaListeners.signal });
     media.src = item.url;
     content.replaceChildren(media);
     if (pushHistory) window.history.pushState({ page: window.location.pathname, preview: item }, '', window.location.href);

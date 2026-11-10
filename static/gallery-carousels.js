@@ -1,4 +1,5 @@
 import { mountInkSpreadCarousel } from './components/ink-spread-carousel/InkSpreadCarouselEngine.js';
+import { t } from './i18n.js';
 
 const escapeHtml = value => String(value ?? '').replace(/[&<>'"]/g, c => ({
   '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;'
@@ -20,14 +21,14 @@ const observer = new IntersectionObserver(entries => {
 
 function details(group, index) {
   const photo = group.photos[index];
-  const title = photo.item ? photo.item.id : '主页快照';
+  const title = photo.item ? photo.item.id : t('media.snapshot');
   return `<div class="media-title"><span>${escapeHtml(title)}</span><span class="photo-count">${index + 1} / ${group.photos.length}</span></div>
     <p class="caption">${escapeHtml(photo.alt)}</p>
     <div class="media-actions">
-      <a href="${escapeHtml(photo.url)}" data-preview="image" data-preview-title="@${escapeHtml(group.target)} ${escapeHtml(title)}">查看原图</a>
-      <a href="${escapeHtml(photo.url)}${photo.url.includes('?') ? '&' : '?'}download=1">下载</a>
-      ${photo.item?.source_url ? `<a href="${escapeHtml(photo.item.source_url)}" target="_blank" rel="noreferrer">原帖</a>` : ''}
-      ${photo.item ? `<button class="delete-button" type="button" data-platform="${group.platform}" data-target="${escapeHtml(group.target)}" data-item="${escapeHtml(photo.item.id)}">删除此帖</button>` : photo.latest ? `<button class="delete-button" type="button" data-platform="${group.platform}" data-target="${escapeHtml(group.target)}" data-latest="1">删除截图</button>` : ''}
+      <a href="${escapeHtml(photo.url)}" data-preview="image" data-preview-title="@${escapeHtml(group.target)} ${escapeHtml(title)}">${t('media.viewOriginal')}</a>
+      <a href="${escapeHtml(photo.url)}${photo.url.includes('?') ? '&' : '?'}download=1">${t('media.download')}</a>
+      ${photo.item?.source_url ? `<a href="${escapeHtml(photo.item.source_url)}" target="_blank" rel="noreferrer">${t('media.originalPost')}</a>` : ''}
+      ${photo.item ? `<button class="delete-button" type="button" data-platform="${group.platform}" data-target="${escapeHtml(group.target)}" data-item="${escapeHtml(photo.item.id)}">${t('media.deletePost')}</button>` : photo.latest ? `<button class="delete-button" type="button" data-platform="${group.platform}" data-target="${escapeHtml(group.target)}" data-latest="1">${t('media.deleteScreenshot')}</button>` : ''}
     </div>`;
 }
 
@@ -39,7 +40,7 @@ export function imageGroupsMarkup(target, requestedKind) {
   const photos = [], screenshots = [];
   if (target.latest) screenshots.push({
     url: `${target.latest}?v=${encodeURIComponent(target.status.checked_at || '')}`,
-    alt: `@${target.name} 的最新主页截图`,
+    alt: t('media.latestAlt', { name: target.name }),
     latest: true,
   });
   for (const item of target.items) {
@@ -48,7 +49,7 @@ export function imageGroupsMarkup(target, requestedKind) {
       const screenshot = file.name === 'page.png';
       (screenshot ? screenshots : photos).push({
         url: file.url, item,
-        alt: screenshot ? `@${target.name} 的帖子 ${item.id} 截图` : item.caption || `@${target.name} 的归档图片 ${file.name}`,
+        alt: screenshot ? t('media.postScreenshotAlt', { name: target.name, id: item.id }) : item.caption || t('media.archiveImageAlt', { name: target.name, file: file.name }),
       });
     }
   }

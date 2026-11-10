@@ -1,0 +1,19 @@
+[Unit]
+Description=WeChat XFCE desktop
+After=network.target
+
+[Service]
+Type=simple
+User=wechat
+Group=wechat
+Environment=HOME=/mnt/data/wechat-home
+EnvironmentFile=-/etc/ig-luv/wechat.env
+WorkingDirectory=/mnt/data/wechat-home
+ExecStartPre=+/usr/bin/install -d -o wechat -g wechat -m 700 /mnt/data/wechat-home/.vnc
+ExecStart=/usr/bin/tigervncserver :2 -fg -localhost yes -SecurityTypes None -geometry 1280x800 -depth 24
+ExecStop=/usr/bin/tigervncserver -kill :2
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

@@ -1,6 +1,6 @@
 # IG Luv
 
-[English](README.md) | **简体中文**
+[English](README.md) | **简体中文** | [繁體中文](README.zh-TW.md)
 
 IG Luv 不只是又一个社交媒体采集器。它是一间只为一个人亮着的私人观察室：那个你嘴上说早就放下的前任。
 
@@ -16,7 +16,7 @@ IG Luv 不只是又一个社交媒体采集器。它是一间只为一个人亮�
 - 抖音公开、Cookie、二维码和手机号登录方式。
 - Threads 公开、账号密码和 Cookie 登录。
 - X 公开、账号密码和 Cookie 登录。
-- 通过已登录的官方 Linux 微信采集朋友圈窗口快照。
+- 从已登录的官方 Linux 微信结构化导入指定好友的朋友圈。
 - 各平台独立配置、会话、归档、状态和删除操作。
 - 各平台独立启用开关、采集频率、最近作品条数和自动清理天数。
 - 保存帖子页面截图、原图和 MP4 视频。
@@ -31,14 +31,31 @@ IG Luv 不只是又一个社交媒体采集器。它是一间只为一个人亮�
 
 ## 启动
 
+一条命令，按提示回答即可：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/MakkaPakka518/ig-luv/main/install.sh | sudo bash
+```
+
+脚本会先让你选择简体中文、繁体中文或英文，再询问安装目录、公网域名或 IP、面板密码，以及是否监听微信朋友圈。它会自动安装缺失的 Docker、
+拉取本仓库、按所选地址生成 `.env` 与 Caddy 站点并启动服务。选择监听朋友圈时会额外安装官方 Linux
+微信、Xvfb/XFCE 远程桌面和受面板密码保护的 `/wechat` noVNC 页面、审计过的 SNS 导出工具和宿主采集器，
+并在你扫码登录时完成一次性 SNS 密钥登记。
+
+无人值守时可使用环境变量：`INSTALL_LANG=zh-CN|zh-TW|en`、`DEPLOY_DIR`、`PANEL_HOST`、
+`PANEL_PASSWORD`、`ENABLE_WECHAT=y|n`、`DRY_RUN=1`（仅打印命令）。重复执行会升级已有目录并保留已保存的密码。
+
+手动方式：
+
 ```bash
 cp .env.example .env
-# 编辑 .env，设置 PANEL_PASSWORD 和 PANEL_DOMAIN
+# 编辑 .env，设置 PANEL_PASSWORD 和 PANEL_HOST
+cp deploy/Caddyfile.domain Caddyfile   # 纯 IP 主机改用 deploy/Caddyfile.ip
 docker compose up -d --build
 docker compose logs -f
 ```
 
-打开 `https://<PANEL_DOMAIN>:8443`，使用 `PANEL_PASSWORD` 登录，然后在面板中配置平台账号、关注目标、采集频率和作品条数。网页登录状态保持 30 天。
+打开 `https://<PANEL_HOST>:8443`，使用 `PANEL_PASSWORD` 登录，然后在面板中配置平台账号、关注目标、采集频率和作品条数。网页登录状态保持 30 天。
 
 ## 平台配置
 
@@ -83,9 +100,7 @@ docker compose logs -f
 
 微信朋友圈读取测试机上官方 Linux 微信的数据目录。一次性 SNS 专用密钥登记只验证本地 `sns.db`；之后采集器仅导入面板中明确选择的好友 wxid，以及对应文字、原图和视频。聊天、联系人、评论、点赞、位置、原始 XML、CDN Token 和数据库密钥都不会进入 IG Luv 数据目录。
 
-主机需要官方 Linux 微信、Python 3、`python3-pycryptodome`、`python3-zstandard`、Node.js、经过审查的外部 SNS 导出/媒体工具，以及保存在 IG Luv 目录之外的 SNS 密钥。设置 `WECHAT_ACCOUNT_DIR` 后安装 `deploy/ig-luv-wechat.service`，服务以微信用户身份运行；随附 unit 会用 `ExecStartPre` 创建可写的 `data/wechat`。微信平台默认关闭，关闭状态下只发现好友候选，不导入帖子；必须从候选列表选择稳定 wxid 后启用。
-
-结构化朋友圈文字和原始图片/视频需要单独完成 `sns.db` 密钥登记，当前截图版暂不包含。
+主机需要官方 Linux 微信、Python 3、`python3-pycryptodome`、`python3-zstandard`、Node.js、经过审查的外部 SNS 导出/媒体工具，以及保存在 IG Luv 数据目录之外的 SNS 密钥。在 `install.sh` 中选择启用微信后，脚本会安装这些组件、创建 `wechat` 用户、配置 Xvfb/XFCE VNC 桌面与受面板密码保护的 `/wechat` noVNC 页面、安装 `deploy/ig-luv-wechat.service` 和两个桌面服务，并完成一次性密钥登记。采集器从 `/etc/ig-luv/wechat.env` 读取 `WECHAT_ACCOUNT_DIR` 等路径；服务也会通过 `ExecStartPre` 为 `wechat` 用户创建 `/opt/ig-luv/data/wechat`。微信平台默认关闭，关闭状态下只发现好友候选，不导入帖子；必须从候选列表选择稳定 wxid 后启用。
 
 ## X
 
@@ -105,7 +120,7 @@ X 使用独立浏览器配置和 `data/x/` 归档目录。多图、MP4 视频、
 - `data/douyin/`：抖音浏览器配置、已见作品、截图和归档。
 - `data/threads/`：Threads 浏览器配置、已见作品、验证状态、截图和归档。
 - `data/x/`：X 浏览器配置、已见作品、截图和归档。
-- `data/wechat/`：微信朋友圈页面快照与主机采集状态。
+- `data/wechat/`：所选好友导入的微信朋友圈、作者列表与宿主采集状态。
 
 `data/` 已被 Git 忽略。需要保留会话和归档时请单独备份。
 

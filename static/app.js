@@ -1,6 +1,10 @@
 import { imageGroupsMarkup, syncImageGroups, destroyImageGroups } from './gallery-carousels.js';
 import { createMediaPreview } from './media-preview.js';
 import { createThemeToggle } from './theme-toggle.js';
+import { formatDate, initI18n, locale, t } from './i18n.js';
+
+initI18n();
+document.querySelectorAll('#post-limit option').forEach(option => { option.textContent = t('settings.posts', { count: option.value }); });
 
 const elements = {
   band: document.querySelector('#status-band'),
@@ -33,18 +37,18 @@ let lastState;
 let librarySignature = '';
 let selectedPlatform = 'instagram';
 let activePlatform = 'all';
-const platformNames = { instagram: 'Instagram', tiktok: 'TikTok', douyin: '抖音', threads: 'Threads', x: 'X', wechat: '微信' };
+const platformNames = { instagram: 'Instagram', tiktok: 'TikTok', douyin: t('nav.douyin'), threads: 'Threads', x: 'X', wechat: locale === 'en' ? 'WeChat' : '微信' };
 const preview = createMediaPreview(document.querySelector('#media-preview'));
 const themeToggle = createThemeToggle([...document.querySelectorAll('.theme-toggle')]);
 const pages = {
-  '/': { title: '全部媒体', platform: 'all' },
+  '/': { title: t('page.all'), platform: 'all' },
   '/instagram': { title: 'Instagram', platform: 'instagram' },
   '/tiktok': { title: 'TikTok', platform: 'tiktok' },
   '/threads': { title: 'Threads', platform: 'threads' },
   '/x': { title: 'X', platform: 'x' },
-  '/douyin': { title: '抖音', platform: 'douyin' },
-  '/moments': { title: '微信朋友圈', platform: 'wechat' },
-  '/settings': { title: '设置', platform: 'all' },
+  '/douyin': { title: t('page.douyin'), platform: 'douyin' },
+  '/moments': { title: t('page.moments'), platform: 'wechat' },
+  '/settings': { title: t('page.settings'), platform: 'all' },
 };
 let currentPage = '';
 const pageScroll = new Map(), pageFilters = new Map();
@@ -52,14 +56,6 @@ const pageScroll = new Map(), pageFilters = new Map();
 const escapeHtml = (value = '') => String(value).replace(/[&<>'"]/g, character => ({
   '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;'
 })[character]);
-
-function formatDate(value) {
-  if (!value) return '';
-  const date = new Date(value);
-  return Number.isNaN(date.valueOf()) ? '' : new Intl.DateTimeFormat('zh-CN', {
-    month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit'
-  }).format(date);
-}
 
 function notify(message) {
   elements.toast.textContent = message;
@@ -72,10 +68,10 @@ async function api(path, options) {
   const response = await fetch(path, options);
   if (response.status === 401) {
     location.href = '/login';
-    throw new Error('登录已失效');
+    throw new Error(t('error.sessionExpired'));
   }
   const body = await response.json();
-  if (!response.ok) throw new Error(body.detail || '请求失败');
+  if (!response.ok) throw new Error(locale === 'zh-CN' && body.detail || t('error.requestFailed'));
   return body;
 }
 
@@ -86,40 +82,43 @@ function renderStatus(globalStatus = {}) {
     statusPlatform = Object.keys(globalStatus.platforms || {}).find(platform => globalStatus.platforms[platform].state === 'error') || selectedPlatform;
   }
   const status = statusPlatform === 'all' ? globalStatus : globalStatus.platforms?.[statusPlatform] || (statusPlatform === 'instagram' ? globalStatus : {});
-  const brand = platformNames[statusPlatform] || '全部平台';
+  const brand = platformNames[statusPlatform] || t('status.allPlatforms');
+  const serverDetail = locale === 'zh-CN' && status.error || '';
   const errors = {
-    invalid_credentials: ['账号或密码错误', `请在设置中修改 ${brand} 账号或密码后重试`],
-    verification_required: ['需要验证码', `输入 ${brand} 发来的验证码以继续登录`],
-    invalid_verification: ['验证码错误', '请输入新验证码后再次提交'],
-    manual_verification: ['需要确认登录', statusPlatform !== 'instagram' ? '查看登录截图完成验证，或切换 Cookie 登录' : '按登录截图提示完成 Instagram 安全确认'],
-    login_page_changed: ['登录页面已变化', `查看登录截图确认 ${brand} 当前页面`],
-    tiktok_blocked: ['TikTok 需要处理', status.error || '请完成登录或更新 Cookie'],
-    threads_blocked: ['Threads 需要处理', status.error || '请完成登录或更新 Cookie'],
-    x_blocked: ['X 需要处理', status.error || '请完成登录或更新 Cookie'],
-    douyin_blocked: ['抖音需要处理', status.error || '请更新 Cookie 或完成验证'],
-    sms_send_failed: ['短信发送失败', status.error || '请检查手机号后重试'],
-    sms_login_required: ['验证码已超时', '重新保存手机号以发送新的验证码'],
-    wechat_capture_failed: ['朋友圈采集失败', status.error || '请确认 Linux 微信已登录并可打开朋友圈'],
-    rate_limited: [`${brand} 请求过于频繁`, status.error || '请稍后重试或更新 Cookie'],
+    invalid_credentials: [t('status.invalidCredentials.title'), t('status.invalidCredentials.detail', { brand })],
+    verification_required: [t('status.verificationRequired.title'), t('status.verificationRequired.detail', { brand })],
+    invalid_verification: [t('status.invalidVerification.title'), t('status.invalidVerification.detail')],
+    manual_verification: [t('status.manualVerification.title'), t(statusPlatform !== 'instagram' ? 'status.manualVerification.external' : 'status.manualVerification.instagram')],
+    login_page_changed: [t('status.loginChanged.title'), t('status.loginChanged.detail', { brand })],
+    tiktok_blocked: [t('status.blocked.title', { brand: 'TikTok' }), serverDetail || t('status.blocked.detail')],
+    threads_blocked: [t('status.blocked.title', { brand: 'Threads' }), serverDetail || t('status.blocked.detail')],
+    x_blocked: [t('status.blocked.title', { brand: 'X' }), serverDetail || t('status.blocked.detail')],
+    douyin_blocked: [t('status.blocked.title', { brand: platformNames.douyin }), serverDetail || t('status.douyinBlocked.detail')],
+    sms_send_failed: [t('status.smsFailed.title'), serverDetail || t('status.smsFailed.detail')],
+    sms_login_required: [t('status.smsExpired.title'), t('status.smsExpired.detail')],
+    wechat_capture_failed: [t('status.wechatFailed.title'), serverDetail || t('status.wechatFailed.detail')],
+    rate_limited: [t('status.rateLimited.title', { brand }), serverDetail || t('status.rateLimited.detail')],
   };
   const labels = {
-    not_configured: ['等待配置', `填写 ${brand} 关注用户后开始采集`],
-    running: ['正在检查', '浏览器正在读取关注用户的最新内容'],
-    ready: ['采集正常', '会话有效，等待下一次检查'],
-    disabled: ['平台已关闭', '不会执行采集，也不会显示在手机底栏'],
-    error: ['需要处理', status.error || '检查失败，请查看目标状态'],
+    not_configured: [t('status.notConfigured.title'), t('status.notConfigured.detail', { brand })],
+    running: [t('status.running.title'), t('status.running.detail')],
+    ready: [t('status.ready.title'), t('status.ready.detail')],
+    disabled: [t('status.disabled.title'), t('status.disabled.detail')],
+    error: [t('status.error.title'), serverDetail || t('status.error.detail')],
   };
   let [title, detail] = errors[status.error_code] || labels[status.state] || labels.not_configured;
   const screenshot = statusPlatform === 'instagram' ? lastState?.login_screenshot : lastState?.[`${statusPlatform}_login_screenshot`];
   if (statusPlatform === 'douyin' && lastState?.config?.douyin?.login_method === 'qrcode' && screenshot && status.state === 'running') {
     const qrState = lastState?.douyin_qr_state;
-    title = qrState === 'scanned' ? '已扫码' : qrState === 'confirming' ? '正在完成登录' : '等待扫码';
-    detail = qrState === 'scanned' ? '请在抖音 App 中确认登录' : qrState === 'confirming' ? '正在写入登录会话，请稍候' : '长按二维码存入照片，再在抖音扫一扫中从相册选择';
+    const key = qrState === 'scanned' ? 'scanned' : qrState === 'confirming' ? 'confirming' : 'waiting';
+    title = t(`status.qr.${key}.title`);
+    detail = t(`status.qr.${key}.detail`);
   }
   if (statusPlatform === 'douyin' && lastState?.config?.douyin?.login_method === 'phone' && status.state === 'running') {
     const smsState = lastState?.douyin_sms_state;
-    title = smsState === 'sending' ? '正在发送短信' : smsState === 'invalid' ? '验证码错误' : smsState === 'submitting' ? '正在验证' : '等待短信验证码';
-    detail = smsState === 'sending' ? '正在等待抖音确认发送结果' : smsState === 'invalid' ? '请输入短信中的新验证码' : smsState === 'submitting' ? '正在完成抖音登录，请稍候' : '验证码已发送，请在设置中输入';
+    const key = ['sending', 'invalid', 'submitting'].includes(smsState) ? smsState : 'waiting';
+    title = t(`status.sms.${key}.title`);
+    detail = t(`status.sms.${key}.detail`);
   }
   elements.band.dataset.state = status.state || 'not_configured';
   elements.statusTitle.textContent = title;
@@ -128,8 +127,8 @@ function renderStatus(globalStatus = {}) {
   elements.railState.textContent = title;
   elements.statusAction.hidden = !screenshot;
   elements.statusAction.href = screenshot || '#';
-  elements.statusAction.textContent = statusPlatform === 'douyin' && lastState?.config?.douyin?.login_method === 'qrcode' ? '查看扫码二维码' : '查看登录页面';
-  document.querySelector('#verification-title').textContent = `输入 ${platformNames[selectedPlatform]} 验证码`;
+  elements.statusAction.textContent = t(statusPlatform === 'douyin' && lastState?.config?.douyin?.login_method === 'qrcode' ? 'status.viewQr' : 'status.viewLogin');
+  document.querySelector('#verification-title').textContent = t('settings.verificationTitle', { brand: platformNames[selectedPlatform] });
   const smsWaiting = selectedPlatform === 'douyin' && elements.loginMethod.value === 'phone' && ['waiting', 'invalid'].includes(lastState?.douyin_sms_state);
   elements.verificationPanel.hidden = (!['verification_required', 'invalid_verification'].includes(settingStatus.error_code) && !smsWaiting)
     || (selectedPlatform !== 'instagram' && elements.loginMethod.value === 'cookie');
@@ -141,29 +140,29 @@ function previewFor(item) {
 
 function mediaCard(target, item, snapshot = false) {
   const name = target.name, key = target.key || name, platform = target.platform || 'instagram';
-  const preview = snapshot ? { name: '主页截图', kind: 'screenshot', url: item.latest } : previewFor(item);
+  const preview = snapshot ? { name: t('media.snapshotFile'), kind: 'screenshot', url: item.latest } : previewFor(item);
   if (!preview) return '';
   const kind = snapshot ? 'screenshot' : preview.kind;
   const source = kind === 'video'
     ? `<video src="${escapeHtml(preview.url)}" controls preload="metadata"></video>`
-    : `<img src="${escapeHtml(preview.url)}" alt="@${escapeHtml(name)} 的${kind === 'screenshot' ? '截图' : '图片'}" loading="lazy">`;
-  const title = snapshot ? '主页快照' : item.id;
+    : `<img src="${escapeHtml(preview.url)}" alt="${escapeHtml(t('media.imageAlt', { name, kind: t(`filter.${kind === 'screenshot' ? 'screenshot' : 'image'}`) }))}" loading="lazy">`;
+  const title = snapshot ? t('media.snapshot') : item.id;
   const files = snapshot ? [{ name: 'latest.png', url: item.latest }] : item.files;
   const fileLinks = files.map(file => `
-    <a href="${escapeHtml(file.url)}?download=1"><span>${escapeHtml(file.name)}</span><small>下载</small></a>`).join('');
-  const deleteButton = snapshot ? `<button class="delete-button" type="button" data-platform="${platform}" data-target="${escapeHtml(name)}" data-latest="1">删除截图</button>` : `<button class="delete-button" type="button" data-platform="${platform}" data-target="${escapeHtml(name)}" data-item="${escapeHtml(item.id)}">删除</button>`;
+    <a href="${escapeHtml(file.url)}?download=1"><span>${escapeHtml(file.name)}</span><small>${t('media.download')}</small></a>`).join('');
+  const deleteButton = snapshot ? `<button class="delete-button" type="button" data-platform="${platform}" data-target="${escapeHtml(name)}" data-latest="1">${t('media.deleteScreenshot')}</button>` : `<button class="delete-button" type="button" data-platform="${platform}" data-target="${escapeHtml(name)}" data-item="${escapeHtml(item.id)}">${t('media.delete')}</button>`;
   return `
     <article class="media-card" data-kind="${kind}" data-media-key="${escapeHtml(key)}:video:${escapeHtml(item.id)}" data-signature="${escapeHtml(JSON.stringify(item))}">
-      <div class="media-frame">${source}<span class="file-badge">${kind === 'video' ? '视频' : kind === 'screenshot' ? '截图' : '图片'}</span></div>
+      <div class="media-frame">${source}<span class="file-badge">${t(`filter.${kind === 'video' ? 'video' : kind === 'screenshot' ? 'screenshot' : 'image'}`)}</span></div>
       <div class="media-body">
         <div class="media-title"><span>${escapeHtml(title)}</span><time>${snapshot ? '' : formatDate(item.captured_at)}</time></div>
-        <p class="caption">${snapshot ? `@${escapeHtml(name)} 最近一次主页检查` : escapeHtml(item.caption || `已归档 ${platformNames[platform]} 内容`)}</p>
+        <p class="caption">${snapshot ? escapeHtml(t('media.latestCheck', { name })) : escapeHtml(item.caption || t('media.archived', { brand: platformNames[platform] }))}</p>
         <div class="media-actions">
-          <a href="${escapeHtml(preview.url)}" data-preview="${kind === 'video' ? 'video' : 'image'}" data-preview-title="@${escapeHtml(name)} ${escapeHtml(title)}">${kind === 'video' ? '查看视频' : '查看原图'}</a>
-          ${!snapshot && item.source_url ? `<a href="${escapeHtml(item.source_url)}" target="_blank" rel="noreferrer">原帖</a>` : ''}
+          <a href="${escapeHtml(preview.url)}" data-preview="${kind === 'video' ? 'video' : 'image'}" data-preview-title="@${escapeHtml(name)} ${escapeHtml(title)}">${t(kind === 'video' ? 'media.viewVideo' : 'media.viewOriginal')}</a>
+          ${!snapshot && item.source_url ? `<a href="${escapeHtml(item.source_url)}" target="_blank" rel="noreferrer">${t('media.originalPost')}</a>` : ''}
           ${deleteButton}
         </div>
-        <details class="file-list"><summary>文件 ${files.length}</summary>${fileLinks}</details>
+        <details class="file-list"><summary>${t('media.files', { count: files.length })}</summary>${fileLinks}</details>
       </div>
     </article>`;
 }
@@ -174,11 +173,11 @@ function textCard(target, item) {
   return `<article class="media-card text-card" data-kind="text" data-media-key="${escapeHtml(target.key || target.name)}:text:${escapeHtml(item.id)}" data-signature="${escapeHtml(JSON.stringify(item))}">
     <div class="media-body">
       <div class="media-title"><span>${escapeHtml(item.id)}</span><time>${formatDate(item.captured_at)}</time></div>
-      <p class="text-content">${escapeHtml(item.caption || '纯文字贴文')}</p>
+      <p class="text-content">${escapeHtml(item.caption || t('media.textFallback'))}</p>
       <div class="media-actions">
-        ${item.source_url ? `<a href="${escapeHtml(item.source_url)}" target="_blank" rel="noreferrer">原帖</a>` : ''}
-        ${textFile ? `<a href="${escapeHtml(textFile.url)}?download=1">下载文字</a>` : ''}
-        <button class="delete-button" type="button" data-platform="${platform}" data-target="${escapeHtml(target.name)}" data-item="${escapeHtml(item.id)}">删除</button>
+        ${item.source_url ? `<a href="${escapeHtml(item.source_url)}" target="_blank" rel="noreferrer">${t('media.originalPost')}</a>` : ''}
+        ${textFile ? `<a href="${escapeHtml(textFile.url)}?download=1">${t('media.downloadText')}</a>` : ''}
+        <button class="delete-button" type="button" data-platform="${platform}" data-target="${escapeHtml(target.name)}" data-item="${escapeHtml(item.id)}">${t('media.delete')}</button>
       </div>
     </div>
   </article>`;
@@ -188,7 +187,7 @@ function renderLibrary(library) {
   const hasContent = library.some(target => target.latest || target.items.length);
   if (!hasContent) {
     elements.library.innerHTML = `
-      <div class="empty-state"><div><h3>还没有收藏</h3><p>配置 Instagram、TikTok、抖音、Threads、X 或微信，首次检查后内容会出现在这里。</p><a href="/settings" data-route>前往采集设置</a></div></div>`;
+      <div class="empty-state"><div><h3>${t('media.emptyTitle')}</h3><p>${t('media.emptyDetail')}</p><a href="/settings" data-route>${t('media.emptyAction')}</a></div></div>`;
     syncImageGroups(elements.library);
     return;
   }
@@ -202,10 +201,10 @@ function renderLibrary(library) {
     const screenshots = imageGroupsMarkup(target, 'screenshot');
     const videos = target.items.filter(item => item.files.some(file => file.kind === 'video')).map(item => mediaCard(target, item)).join('');
     const textCards = target.items.filter(item => item.files.some(file => file.kind === 'text') && !item.files.some(file => file.kind === 'video' || (file.kind === 'image' && file.name !== 'page.png'))).map(item => textCard(target, item)).join('');
-    const state = target.status.error ? escapeHtml(targetState(target.status)) : target.status.failed_items?.length ? `${target.items.length} 条归档，${target.status.failed_items.length} 条待重试` : `${target.items.length} 条归档`;
+    const state = target.status.error ? escapeHtml(targetState(target.status)) : target.status.failed_items?.length ? t('media.retryCount', { count: target.items.length, failed: target.status.failed_items.length }) : t('media.archivedCount', { count: target.items.length });
     return `<section class="target-block" data-target-key="${escapeHtml(key)}" data-platform="${platform}">
-      <div class="target-heading"><h3><span class="platform-name"><svg class="platform-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="/static/icons/platforms.svg#${platform}"/></svg>${platformNames[platform]}</span>${wechat ? escapeHtml(target.display_name || (target.name === 'moments' ? '我的朋友圈' : target.name)) : `@${escapeHtml(target.name)}`} <span class="rail-state">${state}</span></h3><div class="target-actions">${profileUrl ? `<a href="${profileUrl}" target="_blank" rel="noreferrer">打开主页</a>` : ''}<button class="delete-button" type="button" data-platform="${platform}" data-target="${escapeHtml(target.name)}">删除此用户</button></div></div>
-      <div class="media-groups">${mediaGroup('image', '图片', photos, true)}${mediaGroup('video', '视频', videos)}${mediaGroup('text', '文字', textCards)}${mediaGroup('screenshot', '截图', screenshots)}</div>
+      <div class="target-heading"><h3><span class="platform-name"><svg class="platform-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="/static/icons/platforms.svg#${platform}"/></svg>${platformNames[platform]}</span>${wechat ? escapeHtml(target.display_name || (target.name === 'moments' ? t('media.myMoments') : target.name)) : `@${escapeHtml(target.name)}`} <span class="rail-state">${state}</span></h3><div class="target-actions">${profileUrl ? `<a href="${profileUrl}" target="_blank" rel="noreferrer">${t('media.openProfile')}</a>` : ''}<button class="delete-button" type="button" data-platform="${platform}" data-target="${escapeHtml(target.name)}">${t('media.deleteUser')}</button></div></div>
+      <div class="media-groups">${mediaGroup('image', t('filter.image'), photos, true)}${mediaGroup('video', t('filter.video'), videos)}${mediaGroup('text', t('filter.text'), textCards)}${mediaGroup('screenshot', t('filter.screenshot'), screenshots)}</div>
     </section>`;
   }).join('');
   // Keep live canvases, focus and video playback intact during status polling.
@@ -254,9 +253,9 @@ function renderLibrary(library) {
 
 function targetState(status = {}) {
   const error = status.error || '';
-  if (error.includes('target requires an authenticated Instagram session')) return '需要有效的 Instagram 登录会话';
-  if (error.includes('Instagram login requires attention')) return 'Instagram 登录需要验证';
-  return error;
+  if (error.includes('target requires an authenticated Instagram session')) return t('error.instagramSession');
+  if (error.includes('Instagram login requires attention')) return t('error.instagramAttention');
+  return locale === 'zh-CN' ? error : t('status.error.detail');
 }
 
 function applyFilter() {
@@ -281,11 +280,11 @@ function hydrateForm(config) {
   elements.postLimit.value = String(config.post_limit || 12);
   elements.postLimit.value = String(selected.post_limit || config.post_limit || 12);
   elements.cleanupDays.value = String(selected.cleanup_days || 0);
-  elements.password.placeholder = selected.has_password ? '已保存，留空保持不变' : '输入登录密码';
-  elements.passwordNote.textContent = selected.has_password ? '已保存，留空保持不变' : `用于建立 ${platformNames[selectedPlatform]} 浏览器会话`;
+  elements.password.placeholder = selected.has_password ? t('settings.savedPlaceholder') : t('settings.passwordPlaceholder');
+  elements.passwordNote.textContent = selected.has_password ? t('settings.savedPlaceholder') : t('settings.passwordSession', { brand: platformNames[selectedPlatform] });
   elements.loginMethod.value = selectedPlatform === 'wechat' ? 'password' : selected.login_method || 'password';
-  elements.cookie.placeholder = selected.has_cookie ? '已保存，留空保持不变' : 'sessionid=...; sessionid_ss=...';
-  document.querySelector('#targets-summary').textContent = selected.targets?.length ? `${selected.targets.length} 位用户` : '未设置';
+  elements.cookie.placeholder = selected.has_cookie ? t('settings.savedPlaceholder') : 'sessionid=...; sessionid_ss=...';
+  document.querySelector('#targets-summary').textContent = selected.targets?.length ? t('settings.users', { count: selected.targets.length }) : t('settings.notSet');
   updateLoginFields();
   hydrated = true;
 }
@@ -298,29 +297,29 @@ function updateLoginFields() {
   phoneOption.hidden = phoneOption.disabled = !douyin;
   if (!douyin && ['qrcode', 'phone'].includes(elements.loginMethod.value)) elements.loginMethod.value = 'password';
   const cookie = external && elements.loginMethod.value === 'cookie', qrcode = douyin && elements.loginMethod.value === 'qrcode', phone = douyin && elements.loginMethod.value === 'phone';
-  document.querySelector('#login-method option[value="password"]').textContent = douyin ? '公开模式' : '账号密码';
-  document.querySelector('#account-label').textContent = phone ? '中国大陆手机号' : `${platformNames[selectedPlatform]} 账号`;
-  document.querySelector('#password-label').textContent = `${platformNames[selectedPlatform]} 密码`;
+  document.querySelector('#login-method option[value="password"]').textContent = t(douyin ? 'settings.method.public' : 'settings.method.password');
+  document.querySelector('#account-label').textContent = phone ? t('settings.phone') : t('settings.account', { brand: platformNames[selectedPlatform] });
+  document.querySelector('#password-label').textContent = t('settings.password', { brand: platformNames[selectedPlatform] });
   document.querySelector('#login-method-field').hidden = !external || wechat;
-  document.querySelector('#login-method-label').textContent = `${platformNames[selectedPlatform]} 登录方式`;
+  document.querySelector('#login-method-label').textContent = t('settings.loginMethod', { brand: platformNames[selectedPlatform] });
   document.querySelector('#cookie-field').hidden = !cookie;
-  document.querySelector('#cookie-label').textContent = `${platformNames[selectedPlatform]} Cookie`;
-  document.querySelector('#cookie-note').textContent = `从已登录 ${platformNames[selectedPlatform]} 的浏览器网络请求中复制 Cookie 请求头的值。`;
+  document.querySelector('#cookie-label').textContent = t('settings.cookie', { brand: platformNames[selectedPlatform] });
+  document.querySelector('#cookie-note').textContent = t('settings.cookieHelp', { brand: platformNames[selectedPlatform] });
   document.querySelector('#public-note').hidden = (!external || cookie) && !wechat;
-  document.querySelector('#public-note').textContent = wechat ? '从加密的 SNS 数据库中仅导入所选好友的文字、原图和视频，不读取聊天内容。' : phone ? '保存设置后会发送短信验证码，并在当前浏览器会话中等待输入。' : qrcode ? '打开二维码后长按图片并“存储到照片”，再用抖音扫一扫从相册选择。二维码有效期约 2 分钟。' : douyin ? '公开访问受限时，请使用手机号、二维码或已登录浏览器的 Cookie。' : `采集公开 ${platformNames[selectedPlatform]} 账号时，账号和密码可以都留空。`;
+  document.querySelector('#public-note').textContent = wechat ? t('settings.wechatNote') : phone ? t('settings.phoneNote') : qrcode ? t('settings.qrNote') : douyin ? t('settings.douyinNote') : t('settings.externalNote', { brand: platformNames[selectedPlatform] });
   elements.username.closest('label').hidden = wechat || cookie || (douyin && !phone);
   elements.password.closest('label').hidden = wechat || cookie || douyin;
   elements.username.required = elements.enabled.checked && (!external || phone);
   elements.targets.required = elements.enabled.checked && !wechat;
-  elements.username.placeholder = phone ? '输入 11 位手机号' : selectedPlatform === 'x' ? 'X 用户名' : external ? '邮箱或用户名' : '手机号、邮箱或用户名';
-  elements.targets.placeholder = wechat ? '微信昵称或 wxid，多个用逗号分隔' : douyin ? '抖音主页链接或 sec_user_id' : '例如 instagram, natgeo';
-  document.querySelector('#targets-note').textContent = wechat ? '从候选列表选择好友 wxid；多个 wxid 用逗号分隔' : douyin ? '粘贴 www.douyin.com/user/... 主页链接，多个用逗号分隔' : '多个用户名用逗号分隔，不需要输入 @';
+  elements.username.placeholder = t(phone ? 'settings.phonePlaceholder' : selectedPlatform === 'x' ? 'settings.xUsername' : external ? 'settings.externalUsername' : 'settings.instagramUsername');
+  elements.targets.placeholder = t(wechat ? 'settings.wechatTargetsPlaceholder' : douyin ? 'settings.douyinTargetsPlaceholder' : 'settings.targetsPlaceholder');
+  document.querySelector('#targets-note').textContent = t(wechat ? 'settings.wechatTargetsHelp' : douyin ? 'settings.douyinTargetsHelp' : 'settings.targetsHelp');
   document.querySelector('#targets-settings').hidden = false;
   if (wechat) elements.targets.setAttribute('list', 'wechat-authors'); else elements.targets.removeAttribute('list');
   document.querySelector('#reset-session').hidden = wechat;
-  document.querySelector('#reset-session').textContent = `重置 ${platformNames[selectedPlatform]} 会话`;
-  document.querySelector('#platform-summary').textContent = `${platformNames[selectedPlatform]}${elements.enabled.checked ? '' : '（已关闭）'}`;
-  document.querySelector('#schedule-summary').textContent = `${elements.interval.selectedOptions[0]?.textContent || ''}，${elements.postLimit.selectedOptions[0]?.textContent || ''}`;
+  document.querySelector('#reset-session').textContent = t('settings.reset', { brand: platformNames[selectedPlatform] });
+  document.querySelector('#platform-summary').textContent = `${platformNames[selectedPlatform]}${elements.enabled.checked ? '' : t('settings.disabledSuffix')}`;
+  document.querySelector('#schedule-summary').textContent = `${elements.interval.selectedOptions[0]?.textContent || ''}${locale === 'en' ? ', ' : '，'}${elements.postLimit.selectedOptions[0]?.textContent || ''}`;
   renderStatus(lastState?.status || {});
 }
 
@@ -376,7 +375,7 @@ async function runNow(button) {
   button.disabled = true;
   try {
     await api('/api/run', { method: 'POST' });
-    notify('已安排立即检查');
+    notify(t('toast.run'));
     setTimeout(refresh, 900);
   } catch (error) {
     notify(error.message);
@@ -406,13 +405,13 @@ elements.library.addEventListener('click', async event => {
   const item = button.dataset.item;
   const latest = button.dataset.latest;
   const platform = button.dataset.platform || 'instagram';
-  const label = latest ? `删除 @${target} 的主页截图？` : item ? '删除这条内容及其文件？' : `删除 @${target} 的全部截图和归档？`;
+  const label = t(latest ? 'confirm.deleteLatest' : item ? 'confirm.deleteItem' : 'confirm.deleteUser', { target });
   if (!confirm(label)) return;
   button.disabled = true;
   try {
     const path = latest ? `/api/targets/${target}/latest` : item ? `/api/targets/${target}/items/${item}` : `/api/targets/${target}`;
     await api(`${path}?platform=${platform}`, { method: 'DELETE' });
-    notify(latest ? '主页截图已删除' : item ? '内容已删除' : '用户记录已删除');
+    notify(t(latest ? 'toast.latestDeleted' : item ? 'toast.itemDeleted' : 'toast.userDeleted'));
     hydrated = false;
     librarySignature = '';
     await refresh(true);
@@ -445,8 +444,8 @@ elements.form.addEventListener('submit', async event => {
     });
     elements.password.value = elements.cookie.value = '';
     hydrated = false;
-    elements.password.placeholder = '已保存，留空保持不变';
-    notify('设置已保存，正在连接');
+    elements.password.placeholder = t('settings.savedPlaceholder');
+    notify(t('toast.saved'));
     setTimeout(refresh, 900);
   } catch (error) {
     notify(error.message);
@@ -458,19 +457,19 @@ elements.form.addEventListener('submit', async event => {
 document.querySelector('#reset-session').addEventListener('click', async () => {
   try {
     await api(`/api/reset-session?platform=${selectedPlatform}`, { method: 'POST' });
-    notify('旧会话将在下一轮清除');
+    notify(t('toast.sessionReset'));
   } catch (error) {
     notify(error.message);
   }
 });
 
 document.querySelector('#cleanup-platform').addEventListener('click', async event => {
-  if (!confirm(`清理 ${platformNames[selectedPlatform]} 的主页截图、帖子截图和全部视频？原图与文字会保留。`)) return;
+  if (!confirm(t('confirm.cleanup', { brand: platformNames[selectedPlatform] }))) return;
   const button = event.currentTarget;
   button.disabled = true;
   try {
     const result = await api(`/api/cleanup?platform=${selectedPlatform}`, { method: 'DELETE' });
-    notify(`已清理 ${result.screenshots} 张截图、${result.videos} 个视频`);
+    notify(t('toast.cleaned', { screenshots: result.screenshots, videos: result.videos }));
     librarySignature = '';
     await refresh(true);
   } catch (error) {
@@ -490,7 +489,7 @@ document.querySelector('#submit-verification').addEventListener('click', async e
       body: JSON.stringify({ code: elements.verificationCode.value }),
     });
     elements.verificationCode.value = '';
-    notify('验证码已提交，正在继续登录');
+    notify(t('toast.verification'));
     setTimeout(() => refresh(false), 900);
   } catch (error) {
     notify(error.message);
@@ -517,7 +516,7 @@ function showPage(path, focus = false) {
   document.querySelector('#library').hidden = settings;
   document.querySelector('#page-title').textContent = page.title;
   document.title = `${page.title} — IG Luv`;
-  document.querySelector('#page-description').textContent = settings ? '凭据只保存在这台 VPS。成功登录后会复用浏览器会话。' : '关注的动态、截图和原始媒体。';
+  document.querySelector('#page-description').textContent = t(settings ? 'page.settingsDescription' : 'page.libraryDescription');
   const icon = document.querySelector('#page-brand');
   icon.hidden = page.platform === 'all';
   icon.querySelector('use').setAttribute('href', `/static/icons/platforms.svg#${page.platform}`);

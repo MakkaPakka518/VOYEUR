@@ -1,0 +1,31 @@
+{
+  http_port 80
+  https_port 8443
+  default_sni {$PANEL_HOST}
+}
+
+https://{$PANEL_HOST}:8443 {
+  tls {
+    issuer acme {
+      profile shortlived
+    }
+  }
+
+  @wechatRoot path /wechat /wechat/
+  redir @wechatRoot /wechat/vnc.html?autoconnect=1&resize=scale&path=wechat/websockify 302
+
+  handle_path /wechat/* {
+    forward_auth panel:8787 {
+      uri /api/auth-check
+    }
+    reverse_proxy {$NOVNC_UPSTREAM:172.21.0.1:6080}
+  }
+
+  handle {
+    reverse_proxy panel:8787
+  }
+}
+
+http://{$PANEL_HOST} {
+  redir https://{$PANEL_HOST}:8443{uri} permanent
+}

@@ -98,8 +98,9 @@ await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
 const base = `http://127.0.0.1:${server.address().port}`;
 const browser = await chromium.launch({ headless: true, args: ['--no-sandbox'] });
 const errors = [];
-async function open(options = {}) {
+async function open({ savedLocale = 'zh-CN', ...options } = {}) {
   const page = await browser.newPage({ viewport: { width: 1440, height: 1000 }, ...options });
+  if (savedLocale) await page.addInitScript(value => localStorage.setItem('ig-luv-locale', value), savedLocale);
   page.on('pageerror', error => errors.push(error.message));
   page.on('console', message => { if (/GL_INVALID/.test(message.text())) errors.push(message.text()); });
   return page;
@@ -119,10 +120,15 @@ async function mount(page, options = {}) {
   await page.waitForFunction(() => window.carousel.root.querySelector('.ib-scene').dataset.ready === 'true');
 }
 async function done(page, index) {
-  await page.waitForFunction(index => {
-    const { dataset } = window.carousel.root.querySelector('.ib-scene');
-    return dataset.index === String(index) && dataset.animating === 'false';
-  }, index);
+  try {
+    await page.waitForFunction(index => {
+      const { dataset } = window.carousel.root.querySelector('.ib-scene');
+      return dataset.index === String(index) && dataset.animating === 'false';
+    }, index);
+  } catch (error) {
+    const state = await page.locator('.ib-scene').evaluate(scene => ({ ...scene.dataset }));
+    throw new Error(`carousel did not settle on ${index}: ${JSON.stringify(state)}`, { cause: error });
+  }
 }
 async function pixel(page, x, y) {
   return page.evaluate(({ x, y }) => {
@@ -208,7 +214,7 @@ try {
   // Image replacement failure leaves the previous texture and controls usable.
   await page.evaluate(() => window.carousel.update({ images: ['/missing.png', '/photo/0.svg'] }));
   await page.locator('.ib-error').waitFor({ state: 'visible' });
-  assert.match(await page.locator('.ib-error').innerText(), /previous photos are still available/);
+  assert(await page.locator('.ib-error').isVisible());
   assert(near(await pixel(page, .5, .5), [36, 131, 88]));
   await page.keyboard.press('ArrowRight');
   await done(page, 3);
@@ -412,7 +418,7 @@ try {
   assert(requests.some(([method, path]) => method === 'DELETE' && path === '/api/targets/demo/items/post-1'));
   for (const width of [375, 768, 1440]) {
     await panel.setViewportSize({ width, height: 1000 });
-    await panel.getByRole('button', { name: '图片', exact: true }).click();
+    await panel.locator('[data-filter="image"]').click();
     assert.equal(await panel.locator('.media-card[data-kind="video"]:visible').count(), 0);
     assert(await panel.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
     await card.scrollIntoViewIfNeeded();
@@ -434,9 +440,9 @@ try {
     }
     await panel.screenshot({ path: `${artifacts}/panel-${width}.png` });
   }
-  await panel.getByRole('button', { name: '视频', exact: true }).click();
+  await panel.locator('[data-filter="video"]').click();
   assert.equal(await panel.locator('.media-card[data-kind="video"]:visible').count(), 1);
-  await panel.getByRole('button', { name: '截图', exact: true }).click();
+  await panel.locator('[data-filter="screenshot"]').click();
   assert.equal(await panel.locator('.photo-carousel-card[data-kind="screenshot"]:visible').count(), 2);
   const latestCard = panel.locator('.photo-carousel-card[data-kind="screenshot"]:visible').first();
   await latestCard.locator('.ib-scene[data-ready="true"]').waitFor();
@@ -451,7 +457,7 @@ try {
   await tk.waitFor();
   await navigate(panel, '/tiktok');
   assert(await panel.locator('#settings').isHidden());
-  await panel.getByRole('button', { name: '图片', exact: true }).click();
+  await panel.locator('[data-filter="image"]').click();
   assert.equal(await panel.locator('.target-block[data-platform="instagram"]:visible').count(), 0);
   const tkCard = tk.locator('.photo-carousel-card[data-kind="image"]');
   await tkCard.scrollIntoViewIfNeeded();
@@ -470,7 +476,7 @@ try {
   assert.equal(await panel.locator('.target-block[data-platform="instagram"]:visible').count(), 0);
   assert.equal(await th.locator('.target-actions a').getAttribute('href'), 'https://www.threads.com/@demo');
   assert.equal(await th.locator('.media-kind-group[data-media-group="text"]').evaluate(node => node.open), false);
-  await panel.getByRole('button', { name: '文字', exact: true }).click();
+  await panel.locator('[data-filter="text"]').click();
   const textCard = th.locator('.text-card');
   await textCard.waitFor();
   assert.match(await textCard.locator('.text-content').innerText(), /純文字貼文/);
@@ -489,7 +495,7 @@ try {
   await xTarget.waitFor();
   assert.equal(await panel.locator('#page-title').innerText(), 'X');
   assert.equal(await xTarget.locator('.target-actions a').getAttribute('href'), 'https://x.com/demo');
-  await panel.getByRole('button', { name: '文字', exact: true }).click();
+  await panel.locator('[data-filter="text"]').click();
   assert.match(await xTarget.locator('.text-content').innerText(), /X 纯文字贴文/);
   for (const width of [375, 1440]) {
     await panel.setViewportSize({ width, height: 1000 });
@@ -501,7 +507,7 @@ try {
   await douyinTarget.waitFor();
   assert.equal(await panel.locator('#page-title').innerText(), '抖音');
   assert.equal(await douyinTarget.locator('.target-actions a').getAttribute('href'), 'https://www.douyin.com/user/MS4wLjAB_Test-ID');
-  await panel.getByRole('button', { name: '图片', exact: true }).click();
+  await panel.locator('[data-filter="image"]').click();
   assert.equal(await douyinTarget.locator('.photo-carousel-card[data-kind="image"]:visible').count(), 1);
   for (const width of [375, 1440]) {
     await panel.setViewportSize({ width, height: 1000 });
@@ -540,7 +546,7 @@ try {
   await panel.locator('#targets-settings summary').click();
   await panel.locator('#ig-targets').fill('demo');
   await panel.locator('#tiktok-cookie').fill('sessionid=fixture-session');
-  await panel.getByRole('button', { name: '保存并连接', exact: true }).click();
+  await panel.locator('#settings-form [type="submit"]').click();
   assert(requests.some(([method, path, body]) => method === 'POST' && path === '/api/config' && body.platform === 'tiktok' && body.login_method === 'cookie' && body.cookie === 'sessionid=fixture-session' && body.interval === 60 && body.post_limit === 6 && body.cleanup_days === 7));
   await panel.waitForFunction(() => document.querySelector('#tiktok-cookie').value === '');
   await panel.locator('#reset-session').click();
@@ -559,7 +565,7 @@ try {
   await panel.locator('#login-method').selectOption('cookie');
   assert.equal(await panel.locator('#cookie-label').innerText(), 'Threads Cookie');
   await panel.locator('#tiktok-cookie').fill('sessionid=threads-fixture');
-  await panel.getByRole('button', { name: '保存并连接', exact: true }).click();
+  await panel.locator('#settings-form [type="submit"]').click();
   assert(requests.some(([method, path, body]) => method === 'POST' && path === '/api/config' && body.platform === 'threads' && body.login_method === 'cookie' && body.cookie === 'sessionid=threads-fixture'));
   await panel.locator('#reset-session').click();
   assert(requests.some(([method, path, , search]) => method === 'POST' && path === '/api/reset-session' && search === '?platform=threads'));
@@ -569,7 +575,7 @@ try {
   await panel.locator('#login-method').selectOption('cookie');
   assert.equal(await panel.locator('#cookie-label').innerText(), 'X Cookie');
   await panel.locator('#tiktok-cookie').fill('auth_token=x-fixture; ct0=csrf');
-  await panel.getByRole('button', { name: '保存并连接', exact: true }).click();
+  await panel.locator('#settings-form [type="submit"]').click();
   assert(requests.some(([method, path, body]) => method === 'POST' && path === '/api/config' && body.platform === 'x' && body.login_method === 'cookie' && body.cookie === 'auth_token=x-fixture; ct0=csrf'));
   await panel.locator('#reset-session').click();
   assert(requests.some(([method, path, , search]) => method === 'POST' && path === '/api/reset-session' && search === '?platform=x'));
@@ -586,14 +592,14 @@ try {
   await panel.locator('#login-method').selectOption('qrcode');
   assert(await panel.locator('#cookie-field').isHidden());
   assert.match(await panel.locator('#public-note').innerText(), /存储到照片/);
-  await panel.getByRole('button', { name: '保存并连接', exact: true }).click();
+  await panel.locator('#settings-form [type="submit"]').click();
   assert(requests.some(([method, path, body]) => method === 'POST' && path === '/api/config' && body.platform === 'douyin' && body.login_method === 'qrcode'));
   await panel.waitForFunction(() => !document.querySelector('#settings-form [type="submit"]').disabled);
   await panel.waitForTimeout(1100);
   await panel.locator('#login-method').selectOption('cookie');
   assert.equal(await panel.locator('#cookie-label').innerText(), '抖音 Cookie');
   await panel.locator('#tiktok-cookie').fill('sessionid=douyin-fixture; ttwid=device');
-  await panel.getByRole('button', { name: '保存并连接', exact: true }).click();
+  await panel.locator('#settings-form [type="submit"]').click();
   assert(requests.some(([method, path, body]) => method === 'POST' && path === '/api/config' && body.platform === 'douyin' && body.login_method === 'cookie' && body.cookie === 'sessionid=douyin-fixture; ttwid=device'));
   await panel.locator('#reset-session').click();
   assert(requests.some(([method, path, , search]) => method === 'POST' && path === '/api/reset-session' && search === '?platform=douyin'));
@@ -617,20 +623,20 @@ try {
   await panel.screenshot({ path: `${artifacts}/settings-collapsed-desktop.png` });
   await panel.waitForFunction(() => document.querySelector('#ig-targets').value === 'demo');
   await panel.evaluate(() => document.querySelector('#ig-targets').value = '');
-  await panel.getByRole('button', { name: '保存并连接', exact: true }).click();
+  await panel.locator('#settings-form [type="submit"]').click();
   assert(await panel.locator('#targets-settings').evaluate(node => node.open));
 
   await navigate(panel, '/tiktok');
-  await panel.getByRole('button', { name: '视频', exact: true }).click();
+  await panel.locator('[data-filter="video"]').click();
   await tk.locator('a[data-preview="video"]').click();
   await dialog.waitFor({ state: 'visible' });
   assert.equal(await dialog.locator('video').getAttribute('src'), '/files/video.mp4');
   assert(await dialog.locator('video').evaluate(node => node.controls && node.playsInline));
   await panel.waitForFunction(() => document.querySelector('#preview-message').textContent.includes('加载失败'));
-  await panel.getByRole('button', { name: '关闭预览', exact: true }).click();
+  await panel.locator('#preview-close').click();
   await dialog.waitFor({ state: 'hidden' });
   assert.equal(await dialog.locator('video').count(), 0);
-  await panel.getByRole('button', { name: '图片', exact: true }).click();
+  await panel.locator('[data-filter="image"]').click();
   await tk.locator('a[data-preview="image"]').first().click();
   await dialog.waitFor({ state: 'visible' });
   await panel.waitForFunction(() => document.querySelector('#preview-content img')?.naturalWidth > 0);
@@ -689,6 +695,52 @@ try {
   assert.equal(await loginPage.locator('.login-form-wrap').evaluate(node => getComputedStyle(node).backgroundColor), 'rgb(16, 24, 32)');
   await loginPage.screenshot({ path: `${artifacts}/login-dark.png` });
   await loginPage.close();
+
+  const localeCases = [
+    ['zh-CN', '回到观察室', '全部媒体', '保存并连接', '切换图片'],
+    ['zh-TW', '回到觀察室', '所有媒體', '儲存並連線', '切換圖片'],
+    ['en', 'Back to the Watch Room', 'All media', 'Save and connect', 'Change image'],
+  ];
+  for (const [savedLocale, loginHeading, pageTitle, saveLabel, carouselLabel] of localeCases) {
+    const localized = await open({ savedLocale });
+    await localized.goto(`${base}/login`);
+    assert.equal(await localized.locator('html').getAttribute('lang'), savedLocale);
+    assert.equal(await localized.locator('.login-form h2').innerText(), loginHeading);
+    assert.equal(await localized.locator('.locale-select').inputValue(), savedLocale);
+    for (const width of [375, 390, 768, 1440]) {
+      await localized.setViewportSize({ width, height: 1000 });
+      assert(await localized.evaluate(() => document.documentElement.scrollWidth <= innerWidth), `${savedLocale} login overflow at ${width}px`);
+    }
+    await localized.setViewportSize({ width: 390, height: 844 });
+    await localized.screenshot({ path: `${artifacts}/login-${savedLocale}-390.png` });
+    await localized.goto(base);
+    await localized.locator('.photo-carousel-card .ib-scene[data-ready="true"]').first().waitFor();
+    assert.equal(await localized.locator('#page-title').innerText(), pageTitle);
+    assert((await localized.locator('.photo-carousel-card .ib-photo').first().getAttribute('aria-label')).startsWith(carouselLabel));
+    await navigate(localized, '/settings');
+    assert.equal(await localized.locator('#settings-form [type="submit"]').innerText(), saveLabel);
+    assert.equal(await localized.locator('.theme-toggle:visible .pixel-switch').getAttribute('aria-label'), await localized.locator('.theme-toggle:visible').evaluate((_, expected) => expected, savedLocale === 'en' ? 'Switch day or night theme' : savedLocale === 'zh-TW' ? '切換日夜主題' : '切换日夜主题'));
+    for (const width of [375, 390, 768, 1440]) {
+      await localized.setViewportSize({ width, height: 1000 });
+      assert(await localized.evaluate(() => document.documentElement.scrollWidth <= innerWidth), `${savedLocale} panel overflow at ${width}px`);
+      assert.equal(await localized.locator('.locale-select:visible').count(), 1);
+      const clipped = await localized.locator('button:visible').evaluateAll(buttons => buttons.filter(button => button.innerText.trim() && button.scrollWidth > button.clientWidth + 1).map(button => button.innerText.trim()));
+      assert.deepEqual(clipped, [], `${savedLocale} has clipped button text at ${width}px`);
+    }
+    await localized.setViewportSize({ width: 390, height: 844 });
+    await localized.screenshot({ path: `${artifacts}/settings-${savedLocale}-390.png`, fullPage: true });
+    await localized.close();
+  }
+
+  const persistedLocale = await open({ savedLocale: null, locale: 'fr-FR' });
+  await persistedLocale.goto(`${base}/login`);
+  await Promise.all([
+    persistedLocale.waitForNavigation(),
+    persistedLocale.locator('.locale-select').selectOption('en'),
+  ]);
+  assert.equal(await persistedLocale.evaluate(() => localStorage.getItem('ig-luv-locale')), 'en');
+  assert.equal(await persistedLocale.locator('html').getAttribute('lang'), 'en');
+  await persistedLocale.close();
   assert.deepEqual(errors, []);
   console.log(`PASS: WebGL/2D ink masks, interruption, keyboard/touch, failure/races, visibility, reduced motion, context recovery, cleanup, gallery actions and 375/768/1440 layouts. Screenshots: ${artifacts}`);
 } finally {

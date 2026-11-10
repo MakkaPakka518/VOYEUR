@@ -1,6 +1,6 @@
 # IG Luv
 
-**English** | [简体中文](README.zh-CN.md)
+**English** | [简体中文](README.zh-CN.md) | [繁體中文](README.zh-TW.md)
 
 IG Luv is not just another social-media collector. It is a private observation room kept lit for one person: the ex you swear you are over.
 
@@ -16,7 +16,7 @@ You have moved on, of course. You just refuse to miss the moment they appear, di
 - Douyin public collection and Cookie import.
 - Threads public collection plus account/password and Cookie login fallbacks.
 - X public collection plus account/password and Cookie login fallbacks.
-- WeChat Moments viewport capture through the signed-in official Linux client.
+- WeChat Moments import from the signed-in official Linux client, selected friend wxids only.
 - Platform-specific configuration, sessions, archives, status and deletion.
 - Per-platform enable switch, polling interval, recent-post limit and automatic cleanup age.
 - Per-post screenshots plus original images and MP4 videos.
@@ -31,14 +31,36 @@ You have moved on, of course. You just refuse to miss the moment they appear, di
 
 ## Run
 
+One command, then answer the prompts:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/MakkaPakka518/ig-luv/main/install.sh | sudo bash
+```
+
+The script first lets you choose Simplified Chinese, Traditional Chinese, or English. It then asks for
+the install directory, the public domain or IP, a panel password, and whether to
+capture WeChat Moments. It installs Docker when missing, clones this repository, writes `.env` and a
+Caddy site for the chosen address, then starts the stack. Answering yes to WeChat also installs the
+official Linux WeChat client, an Xvfb/XFCE VNC desktop with a password-protected `/wechat` noVNC page,
+the audited SNS export tools, and the host collector; it then runs the one-time SNS key enrollment
+while you scan the login QR code.
+
+Non-interactive runs accept environment overrides:
+`INSTALL_LANG=zh-CN|zh-TW|en`, `DEPLOY_DIR`, `PANEL_HOST`, `PANEL_PASSWORD`,
+`ENABLE_WECHAT=y|n`, and `DRY_RUN=1` (print commands only).
+Re-running the script upgrades an existing checkout and keeps the saved password.
+
+Manual alternative:
+
 ```bash
 cp .env.example .env
-# edit .env: set PANEL_PASSWORD and PANEL_DOMAIN
+# edit .env: set PANEL_PASSWORD and PANEL_HOST
+cp deploy/Caddyfile.domain Caddyfile   # or deploy/Caddyfile.ip for an IP-only host
 docker compose up -d --build
 docker compose logs -f
 ```
 
-Open `https://<PANEL_DOMAIN>:8443`, sign in with `PANEL_PASSWORD`, then configure the Instagram account, targets, interval, and post limit in the panel.
+Open `https://<PANEL_HOST>:8443`, sign in with `PANEL_PASSWORD`, then configure the Instagram account, targets, interval, and post limit in the panel.
 
 ## TikTok
 
@@ -100,11 +122,13 @@ their text, original images and videos into `data/wechat/`. Chats, contacts, com
 raw XML, CDN tokens and database keys are never copied into IG Luv data.
 
 Host requirements: official Linux WeChat, Python 3, `python3-pycryptodome`, `python3-zstandard`, Node.js,
-the audited external SNS export/media tools, and a validated SNS key stored outside IG Luv data. Install
-`deploy/ig-luv-wechat.service` after setting `WECHAT_ACCOUNT_DIR`; the service runs as the WeChat user.
-Before starting it, create `/opt/ig-luv/data/wechat` owned by that user (the supplied unit does this with
-`ExecStartPre`). The platform is disabled by default and requires selecting stable wxids from the panel's
-author list; author discovery runs without importing posts while the platform is disabled.
+the audited external SNS export/media tools, and a validated SNS key stored outside IG Luv data. Answering
+yes to WeChat in `install.sh` installs all of these, creates the `wechat` user, sets up the Xvfb/XFCE VNC
+desktop with the panel-authenticated `/wechat` noVNC page, installs `deploy/ig-luv-wechat.service` and the
+two desktop units, and runs the one-time enrollment. The collector reads `WECHAT_ACCOUNT_DIR` (and other
+paths) from `/etc/ig-luv/wechat.env`; the unit also creates `/opt/ig-luv/data/wechat` for the `wechat` user
+with `ExecStartPre`. The platform is disabled by default and requires selecting stable wxids from the
+panel's author list; author discovery runs without importing posts while the platform is disabled.
 
 ## X
 
@@ -130,7 +154,7 @@ Everything is stored under `data/`:
 - `data/douyin/`: Douyin browser profile, seen-post IDs, screenshots and `targets/` archives.
 - `data/threads/`: Threads browser profile, seen-post IDs, verification, screenshots and `targets/` archives.
 - `data/x/`: X browser profile, seen-post IDs, screenshots and `targets/` archives.
-- `data/wechat/`: WeChat Moments viewport captures and host-collector status.
+- `data/wechat/`: imported WeChat Moments of selected friends, author list and host-collector status.
 - `data/config.json` retains the original Instagram fields and adds separate `tiktok`, `douyin`, `threads` and `x` objects.
 
 `data/` is ignored by git. Back it up if you want to keep the session and archive.
