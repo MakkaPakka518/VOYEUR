@@ -515,7 +515,7 @@ function showPage(path, focus = false) {
   document.querySelector('#settings').hidden = !settings;
   document.querySelector('#library').hidden = settings;
   document.querySelector('#page-title').textContent = page.title;
-  document.title = `${page.title} — IG Luv`;
+  document.title = `${page.title} — VOYEUR`;
   document.querySelector('#page-description').textContent = t(settings ? 'page.settingsDescription' : 'page.libraryDescription');
   const icon = document.querySelector('#page-brand');
   icon.hidden = page.platform === 'all';

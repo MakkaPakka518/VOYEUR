@@ -1,4 +1,4 @@
-# IG Luv
+# VOYEUR
 
 **English** | [简体中文](README.zh-CN.md) | [繁體中文](README.zh-TW.md)
 
@@ -62,7 +62,7 @@ You have been telling me all along.
 One command, then answer the prompts:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/MakkaPakka518/ig-luv/main/install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/MakkaPakka518/VOYEUR/main/install.sh | sudo bash
 ```
 
 The script first lets you choose Simplified Chinese, Traditional Chinese, or English. It then asks for
@@ -147,10 +147,10 @@ shows them as downloadable cards under the **Text** media filter.
 WeChat Moments uses the official Linux WeChat data directory on the host. A one-time, SNS-only key
 enrollment validates the local `sns.db`; the collector then imports only explicitly selected friend wxids,
 their text, original images and videos into `data/wechat/`. Chats, contacts, comments, likes, locations,
-raw XML, CDN tokens and database keys are never copied into IG Luv data.
+raw XML, CDN tokens and database keys are never copied into VOYEUR data.
 
 Host requirements: official Linux WeChat, Python 3, `python3-pycryptodome`, `python3-zstandard`, Node.js,
-the audited external SNS export/media tools, and a validated SNS key stored outside IG Luv data. Answering
+the audited external SNS export/media tools, and a validated SNS key stored outside VOYEUR data. Answering
 yes to WeChat in `install.sh` installs all of these, creates the `wechat` user, sets up the Xvfb/XFCE VNC
 desktop with the panel-authenticated `/wechat` noVNC page, installs `deploy/ig-luv-wechat.service` and the
 two desktop units, and runs the one-time enrollment. The collector reads `WECHAT_ACCOUNT_DIR` (and other
@@ -191,7 +191,7 @@ Everything is stored under `data/`:
 
 The panel has separate, directly loadable pages: `/` for all platforms, `/instagram`, `/tiktok`,
 `/douyin`, `/threads`, `/x`, `/moments`, and `/settings`. Desktop navigation includes all routes. The mobile
-bar scrolls horizontally when necessary; tap the `IG Luv` wordmark for the combined view.
+bar scrolls horizontally when necessary; tap the `VOYEUR` wordmark for the combined view.
 The settings page groups platform/login, target users, and collection frequency into native
 expandable sections, initially collapsed. Settings no longer appear below media.
 Instagram, TikTok, Threads and X icons are included locally from Simple Icons (CC0-1.0); Douyin uses the local musical-note mark.

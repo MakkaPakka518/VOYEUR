@@ -1,4 +1,4 @@
-# IG Luv
+# VOYEUR
 
 [English](README.md) | **简体中文** | [繁體中文](README.zh-TW.md)
 
@@ -62,7 +62,7 @@
 一条命令，按提示回答即可：
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/MakkaPakka518/ig-luv/main/install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/MakkaPakka518/VOYEUR/main/install.sh | sudo bash
 ```
 
 脚本会先让你选择简体中文、繁体中文或英文，再询问安装目录、公网域名或 IP、面板密码，以及是否监听微信朋友圈。它会自动安装缺失的 Docker、
@@ -126,9 +126,9 @@ docker compose logs -f
 
 ## 微信朋友圈
 
-微信朋友圈读取测试机上官方 Linux 微信的数据目录。一次性 SNS 专用密钥登记只验证本地 `sns.db`；之后采集器仅导入面板中明确选择的好友 wxid，以及对应文字、原图和视频。聊天、联系人、评论、点赞、位置、原始 XML、CDN Token 和数据库密钥都不会进入 IG Luv 数据目录。
+微信朋友圈读取测试机上官方 Linux 微信的数据目录。一次性 SNS 专用密钥登记只验证本地 `sns.db`；之后采集器仅导入面板中明确选择的好友 wxid，以及对应文字、原图和视频。聊天、联系人、评论、点赞、位置、原始 XML、CDN Token 和数据库密钥都不会进入 VOYEUR 数据目录。
 
-主机需要官方 Linux 微信、Python 3、`python3-pycryptodome`、`python3-zstandard`、Node.js、经过审查的外部 SNS 导出/媒体工具，以及保存在 IG Luv 数据目录之外的 SNS 密钥。在 `install.sh` 中选择启用微信后，脚本会安装这些组件、创建 `wechat` 用户、配置 Xvfb/XFCE VNC 桌面与受面板密码保护的 `/wechat` noVNC 页面、安装 `deploy/ig-luv-wechat.service` 和两个桌面服务，并完成一次性密钥登记。采集器从 `/etc/ig-luv/wechat.env` 读取 `WECHAT_ACCOUNT_DIR` 等路径；服务也会通过 `ExecStartPre` 为 `wechat` 用户创建 `/opt/ig-luv/data/wechat`。微信平台默认关闭，关闭状态下只发现好友候选，不导入帖子；必须从候选列表选择稳定 wxid 后启用。
+主机需要官方 Linux 微信、Python 3、`python3-pycryptodome`、`python3-zstandard`、Node.js、经过审查的外部 SNS 导出/媒体工具，以及保存在 VOYEUR 数据目录之外的 SNS 密钥。在 `install.sh` 中选择启用微信后，脚本会安装这些组件、创建 `wechat` 用户、配置 Xvfb/XFCE VNC 桌面与受面板密码保护的 `/wechat` noVNC 页面、安装 `deploy/ig-luv-wechat.service` 和两个桌面服务，并完成一次性密钥登记。采集器从 `/etc/ig-luv/wechat.env` 读取 `WECHAT_ACCOUNT_DIR` 等路径；服务也会通过 `ExecStartPre` 为 `wechat` 用户创建 `/opt/ig-luv/data/wechat`。微信平台默认关闭，关闭状态下只发现好友候选，不导入帖子；必须从候选列表选择稳定 wxid 后启用。
 
 ## X
 
@@ -154,7 +154,7 @@ X 使用独立浏览器配置和 `data/x/` 归档目录。多图、MP4 视频、
 
 ## 媒体库与清理
 
-面板路由：`/`、`/instagram`、`/tiktok`、`/douyin`、`/threads`、`/x`、`/moments` 和 `/settings`。桌面侧栏显示全部入口；手机底栏在入口较多时可横向滚动，点击 `IG Luv` Logo 返回全部媒体。
+面板路由：`/`、`/instagram`、`/tiktok`、`/douyin`、`/threads`、`/x`、`/moments` 和 `/settings`。桌面侧栏显示全部入口；手机底栏在入口较多时可横向滚动，点击 `VOYEUR` Logo 返回全部媒体。
 
 图片、视频、文字和截图分别放在可展开区域中。图片默认展开，视频、文字和截图默认收起。图片与截图每 12 张分为一组，支持左右点击、键盘方向键、Home 和 End 切换。
 

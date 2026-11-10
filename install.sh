@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# One-command, question-driven deployment for IG Luv.
-#   curl -fsSL https://raw.githubusercontent.com/MakkaPakka518/ig-luv/main/install.sh | sudo bash
+# One-command, question-driven deployment for VOYEUR.
+#   curl -fsSL https://raw.githubusercontent.com/MakkaPakka518/VOYEUR/main/install.sh | sudo bash
 # Skip prompts with env vars: INSTALL_LANG=zh-CN|zh-TW|en, DEPLOY_DIR, PANEL_HOST, PANEL_PASSWORD, ENABLE_WECHAT=y|n, DRY_RUN=1.
 set -euo pipefail
 
-REPO_URL="${REPO_URL:-https://github.com/MakkaPakka518/ig-luv.git}"
+REPO_URL="${REPO_URL:-https://github.com/MakkaPakka518/VOYEUR.git}"
 DEPLOY_DIR="${DEPLOY_DIR:-}"
 WECHAT_HOME=/mnt/data/wechat-home
 TOOLS_DIR=/mnt/data/wechat-tools
@@ -36,7 +36,7 @@ msg() {
         invalid_language_choice) text="提示：无法识别语言选项，将使用 $INSTALL_LANG。" ;;
         root_required) text="请使用 root 运行：curl -fsSL .../install.sh | sudo bash" ;;
         x86_only) text="提示：微信朋友圈采集仅支持 x86_64 主机" ;;
-        title) text="IG Luv 交互式部署" ;;
+        title) text="VOYEUR 交互式部署" ;;
         deploy_dir) text="安装目录" ;;
         panel_host) text="面板访问域名或公网 IP" ;;
         missing_host) text="缺少访问地址" ;;
@@ -70,7 +70,7 @@ msg() {
         invalid_language_choice) text="提醒：無法辨識語言選項，將使用 $INSTALL_LANG。" ;;
         root_required) text="請以 root 身分執行：curl -fsSL .../install.sh | sudo bash" ;;
         x86_only) text="提醒：微信朋友圈擷取功能僅支援 x86_64 主機" ;;
-        title) text="IG Luv 互動式部署" ;;
+        title) text="VOYEUR 互動式部署" ;;
         deploy_dir) text="安裝目錄" ;;
         panel_host) text="面板存取網域或公開 IP" ;;
         missing_host) text="缺少存取位址" ;;
@@ -104,7 +104,7 @@ msg() {
         invalid_language_choice) text="Notice: Unrecognized language choice; using $INSTALL_LANG." ;;
         root_required) text="Run as root: curl -fsSL .../install.sh | sudo bash" ;;
         x86_only) text="Notice: WeChat Moments collection only supports x86_64 hosts" ;;
-        title) text="IG Luv interactive deployment" ;;
+        title) text="VOYEUR interactive deployment" ;;
         deploy_dir) text="Installation directory" ;;
         panel_host) text="Panel domain or public IP" ;;
         missing_host) text="A panel address is required" ;;

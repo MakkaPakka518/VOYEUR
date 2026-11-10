@@ -4,7 +4,7 @@ export const supportedLocales = ['zh-CN', 'zh-TW', 'en'];
 export const catalogs = {
   'zh-CN': {
     'language.label': '语言',
-    'login.title': '回到观察室 | IG Luv',
+    'login.title': '回到观察室 | VOYEUR',
     'login.heroLine1': 'Ta 的痕迹，',
     'login.heroLine2': '一条别丢。',
     'login.tagline': '出现过，就别想消失。',
@@ -12,7 +12,7 @@ export const catalogs = {
     'login.error': '密码不正确，请重试。',
     'login.password': '观察室密码',
     'login.submit': '继续看着 Ta',
-    'nav.home': 'IG Luv 首页',
+    'nav.home': 'VOYEUR 首页',
     'nav.main': '主导航',
     'nav.all': '全部',
     'nav.douyin': '抖音',
@@ -202,7 +202,7 @@ export const catalogs = {
   },
   'zh-TW': {
     'language.label': '語言',
-    'login.title': '回到觀察室 | IG Luv',
+    'login.title': '回到觀察室 | VOYEUR',
     'login.heroLine1': '對方的痕跡，',
     'login.heroLine2': '一條都別漏。',
     'login.tagline': '出現過，就別想消失。',
@@ -210,7 +210,7 @@ export const catalogs = {
     'login.error': '密碼不正確，請再試一次。',
     'login.password': '觀察室密碼',
     'login.submit': '繼續看著對方',
-    'nav.home': 'IG Luv 首頁',
+    'nav.home': 'VOYEUR 首頁',
     'nav.main': '主要導覽',
     'nav.all': '全部',
     'nav.douyin': '抖音',
@@ -400,7 +400,7 @@ export const catalogs = {
   },
   en: {
     'language.label': 'Language',
-    'login.title': 'Back to the Watch Room | IG Luv',
+    'login.title': 'Back to the Watch Room | VOYEUR',
     'login.heroLine1': 'Not one trace',
     'login.heroLine2': 'gets away.',
     'login.tagline': 'Once seen, never gone.',
@@ -408,7 +408,7 @@ export const catalogs = {
     'login.error': 'Incorrect password. Try again.',
     'login.password': 'Watch Room password',
     'login.submit': 'Keep watching them',
-    'nav.home': 'IG Luv home',
+    'nav.home': 'VOYEUR home',
     'nav.main': 'Main navigation',
     'nav.all': 'All',
     'nav.douyin': 'Douyin',

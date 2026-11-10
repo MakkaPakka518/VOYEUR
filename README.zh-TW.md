@@ -1,4 +1,4 @@
-# IG Luv
+# VOYEUR
 
 [English](README.md) | [简体中文](README.zh-CN.md) | **繁體中文**
 
@@ -62,7 +62,7 @@
 只要一行指令，接著依畫面提示回答：
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/MakkaPakka518/ig-luv/main/install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/MakkaPakka518/VOYEUR/main/install.sh | sudo bash
 ```
 
 安裝腳本會先讓你選擇簡體中文、繁體中文或英文，再詢問安裝目錄、公開網域或 IP、面板密碼，以及是否要擷取微信朋友圈。若系統尚未安裝 Docker，腳本會自動安裝，接著複製此儲存庫、寫入 `.env`、依所選位址建立 Caddy 站台，最後啟動整套服務。若選擇啟用微信，腳本還會安裝官方 Linux 微信、Xvfb/XFCE VNC 遠端桌面、受密碼保護的 `/wechat` noVNC 頁面、經過檢查的 SNS 匯出工具與主機端擷取器，並在你掃描登入 QR Code 時完成一次性的 SNS 金鑰登記。
@@ -116,9 +116,9 @@ docker compose logs -f
 
 ## 微信朋友圈
 
-微信朋友圈功能會使用主機上官方 Linux 微信的資料目錄。一次性的 SNS 專用金鑰登記只會驗證本機 `sns.db`；之後擷取器只匯入你明確選取的好友 wxid，以及對應的文字、原始圖片與影片至 `data/wechat/`。聊天內容、聯絡人、留言、按讚、位置、原始 XML、CDN Token 與資料庫金鑰絕不會複製進 IG Luv 的資料目錄。
+微信朋友圈功能會使用主機上官方 Linux 微信的資料目錄。一次性的 SNS 專用金鑰登記只會驗證本機 `sns.db`；之後擷取器只匯入你明確選取的好友 wxid，以及對應的文字、原始圖片與影片至 `data/wechat/`。聊天內容、聯絡人、留言、按讚、位置、原始 XML、CDN Token 與資料庫金鑰絕不會複製進 VOYEUR 的資料目錄。
 
-主機需要官方 Linux 微信、Python 3、`python3-pycryptodome`、`python3-zstandard`、Node.js、經過檢查的外部 SNS 匯出與媒體工具，以及一把儲存在 IG Luv 資料目錄之外、已通過驗證的 SNS 金鑰。在 `install.sh` 選擇啟用微信後，腳本會安裝上述元件、建立 `wechat` 使用者、設定 Xvfb/XFCE VNC 遠端桌面與由面板驗證的 `/wechat` noVNC 頁面、安裝 `deploy/ig-luv-wechat.service` 和兩個桌面服務，並執行一次性金鑰登記。
+主機需要官方 Linux 微信、Python 3、`python3-pycryptodome`、`python3-zstandard`、Node.js、經過檢查的外部 SNS 匯出與媒體工具，以及一把儲存在 VOYEUR 資料目錄之外、已通過驗證的 SNS 金鑰。在 `install.sh` 選擇啟用微信後，腳本會安裝上述元件、建立 `wechat` 使用者、設定 Xvfb/XFCE VNC 遠端桌面與由面板驗證的 `/wechat` noVNC 頁面、安裝 `deploy/ig-luv-wechat.service` 和兩個桌面服務，並執行一次性金鑰登記。
 
 擷取器會從 `/etc/ig-luv/wechat.env` 讀取 `WECHAT_ACCOUNT_DIR` 與其他路徑；服務也會透過 `ExecStartPre`，為 `wechat` 使用者建立 `/opt/ig-luv/data/wechat`。微信平台預設停用，必須先從面板的作者清單選取穩定的 wxid 才能啟用；平台停用時仍會搜尋作者候選人，但不會匯入貼文。
 
@@ -147,7 +147,7 @@ Git 會忽略 `data/`。如果想保留工作階段與封存內容，請自行�
 
 ## 圖片檢視器
 
-面板提供可直接載入的獨立頁面：`/` 顯示全部平台，其他頁面則為 `/instagram`、`/tiktok`、`/douyin`、`/threads`、`/x`、`/moments` 與 `/settings`。桌面導覽包含所有路由；手機導覽列在空間不足時可水平捲動。點一下 `IG Luv` 字樣即可回到全部平台檢視。
+面板提供可直接載入的獨立頁面：`/` 顯示全部平台，其他頁面則為 `/instagram`、`/tiktok`、`/douyin`、`/threads`、`/x`、`/moments` 與 `/settings`。桌面導覽包含所有路由；手機導覽列在空間不足時可水平捲動。點一下 `VOYEUR` 字樣即可回到全部平台檢視。
 
 設定頁會把平台與登入、目標使用者、擷取頻率分成原生可展開區塊，預設全部收合。設定內容不再出現在媒體下方。Instagram、TikTok、Threads 與 X 圖示取自本機的 Simple Icons（CC0-1.0）；抖音則使用本機音符圖示。
 

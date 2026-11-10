@@ -1,5 +1,5 @@
 [Unit]
-Description=IG Luv WeChat Moments host collector
+Description=VOYEUR WeChat Moments host collector
 After=network.target
 
 [Service]

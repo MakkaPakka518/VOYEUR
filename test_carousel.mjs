@@ -364,7 +364,7 @@ try {
   assert.equal(await panel.locator('.media-card[data-kind="video"] video').count(), 1);
   assert(await panel.locator('.media-kind-group[data-media-group="image"]').first().evaluate(node => node.open));
   for (const kind of ['video', 'screenshot']) assert.equal(await panel.locator(`.media-kind-group[data-media-group="${kind}"]`).first().evaluate(node => node.open), false);
-  assert.equal((await panel.locator('.sidebar .wordmark').innerText()).replace(/\s+/g, ' ').trim(), 'IG Luv');
+  assert.equal((await panel.locator('.sidebar .wordmark').innerText()).replace(/\s+/g, ' ').trim(), 'VOYEUR');
   assert.equal(await panel.locator('.sidebar .wordmark-mark svg').count(), 1);
   const card = panel.locator('.photo-carousel-card').first();
   await card.locator('.ib-scene[data-ready="true"]').waitFor();
