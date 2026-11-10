@@ -2,7 +2,11 @@
 
 **English** | [简体中文](README.zh-CN.md)
 
-Private web panel and collectors for Instagram, TikTok, Douyin, Threads, X and WeChat Moments visible to your account. It keeps persistent sessions, archives newly observed content, and downloads available text, images and videos.
+IG Luv is not just another social-media collector. It is a private observation room kept lit for one person: the ex you swear you are over.
+
+It gathers every post your account can already see across Instagram, TikTok, Douyin, Threads, X and WeChat Moments into one dark, password-protected panel, revisiting profiles on schedule and preserving newly observed text, images and videos.
+
+You have moved on, of course. You just refuse to miss the moment they appear, disappear, or erase something in the middle of the night.
 
 ## Features
 
