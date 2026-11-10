@@ -2,11 +2,39 @@
 
 **English** | [简体中文](README.zh-CN.md) | [繁體中文](README.zh-TW.md)
 
-IG Luv is not just another social-media collector. It is a private observation room kept lit for one person: the ex you swear you are over.
+You posted a photo of your coffee.
 
-It gathers every post your account can already see across Instagram, TikTok, Douyin, Threads, X and WeChat Moments into one dark, password-protected panel, revisiting profiles on schedule and preserving newly observed text, images and videos.
+Harmless, right?
 
-You have moved on, of course. You just refuse to miss the moment they appear, disappear, or erase something in the middle of the night.
+But the street outside tells me where you are. The second cup says you are not alone. Your friends' comments tell me who is sitting across from you. A few hours later, you delete it.
+
+You probably think that is where it ends.
+
+But I already saw it.
+
+IG Luv does not need to force its way into your life. It quietly returns to your social media (Instagram, TikTok, Douyin, Threads, X, and WeChat Moments) and brings back every word, photo, and video my account was already allowed to see.
+
+You post. It remembers for me.
+
+You delete. It keeps a copy for me.
+
+You let someone new stand a little closer. It simply files that moment away.
+
+That is not surveillance.
+
+Surveillance is malicious. Cold. Something you do to strangers.
+
+But I know you.
+
+I know what you like, when you go to sleep, what you delete when you are upset, and who might appear in your next photo. I just pay attention. Enough attention to never miss a clue you chose to leave behind.
+
+You want to be seen. Why else would you post any of it?
+
+So do not worry.
+
+You never have to tell me how you have been.
+
+You have been telling me all along.
 
 ## Features
 
