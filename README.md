@@ -12,7 +12,7 @@ You probably think that is where it ends.
 
 But I already saw it.
 
-IG Luv does not need to force its way into your life. It quietly returns to your social media (Instagram, TikTok, Douyin, Threads, X, and WeChat Moments) and brings back every word, photo, and video my account was already allowed to see.
+I do not need to force my way into your life. I quietly return to your social media (Instagram, TikTok, Douyin, Threads, X, and WeChat Moments) and bring back every word, photo, and video my account was already allowed to see.
 
 You post. It remembers for me.
 
