@@ -90,17 +90,17 @@ shows them as downloadable cards under the **Text** media filter.
 
 ## WeChat Moments
 
-WeChat Moments uses the official Linux WeChat session on the host. The first implementation captures an
-already-open standalone Moments window, scrolls several viewport pages, hashes them for deduplication and
-imports only those cropped window images into `data/wechat/`. It does not read chat databases, comments,
-likes or contacts. Structured post text and original media require separate `sns.db` enrollment and are
-not included in this screenshot-based version. The platform is disabled by default; after enabling it,
-keep the standalone Moments window open so the host collector can capture it without touching chats.
+WeChat Moments uses the official Linux WeChat data directory on the host. A one-time, SNS-only key
+enrollment validates the local `sns.db`; the collector then imports only explicitly selected friend wxids,
+their text, original images and videos into `data/wechat/`. Chats, contacts, comments, likes, locations,
+raw XML, CDN tokens and database keys are never copied into IG Luv data.
 
-Host requirements: official Linux WeChat, an active X11 desktop, `xdotool`, `xprop`, ImageMagick's
-`import`, and Python 3. Install `deploy/ig-luv-wechat.service` as a systemd service after adjusting
-`DISPLAY`, `XAUTHORITY` and paths for your host. The service intentionally runs outside Docker and only
-writes normalized captures into IG Luv's `data/wechat/` directory.
+Host requirements: official Linux WeChat, Python 3, `python3-pycryptodome`, `python3-zstandard`, Node.js,
+the audited external SNS export/media tools, and a validated SNS key stored outside IG Luv data. Install
+`deploy/ig-luv-wechat.service` after setting `WECHAT_ACCOUNT_DIR`; the service runs as the WeChat user.
+Before starting it, create `/opt/ig-luv/data/wechat` owned by that user (the supplied unit does this with
+`ExecStartPre`). The platform is disabled by default and requires selecting stable wxids from the panel's
+author list; author discovery runs without importing posts while the platform is disabled.
 
 ## X
 

@@ -114,6 +114,7 @@ def platform_library(platform):
     for target_dir in sorted(path for path in targets_dir.iterdir() if path.is_dir()):
         target = {
             "name": target_dir.name,
+            "display_name": read_json(target_dir / "profile.json", {}).get("display_name", ""),
             "platform": platform,
             "key": target_dir.name if platform == "instagram" else f"{platform}:{target_dir.name}",
             "status": read_json(target_dir / "status.json", {}),
@@ -172,7 +173,7 @@ def state(library_data: bool = True):
             "threads": {"targets": threads.get("targets", []), "username": threads.get("username", ""), "has_password": bool(threads.get("password")), "has_cookie": bool(threads.get("cookie")), "login_method": threads.get("login_method", "password"), "enabled": threads.get("enabled", True), "interval": threads.get("interval", config.get("interval", 300)), "post_limit": threads.get("post_limit", config.get("post_limit", 12)), "cleanup_days": threads.get("cleanup_days", 0)},
             "x": {"targets": x.get("targets", []), "username": x.get("username", ""), "has_password": bool(x.get("password")), "has_cookie": bool(x.get("cookie")), "login_method": x.get("login_method", "password"), "enabled": x.get("enabled", True), "interval": x.get("interval", config.get("interval", 300)), "post_limit": x.get("post_limit", config.get("post_limit", 12)), "cleanup_days": x.get("cleanup_days", 0)},
             "douyin": {"targets": douyin.get("targets", []), "username": douyin.get("username", ""), "has_password": False, "has_cookie": bool(douyin.get("cookie")), "login_method": douyin.get("login_method", "password"), "enabled": douyin.get("enabled", True), "interval": douyin.get("interval", config.get("interval", 300)), "post_limit": douyin.get("post_limit", config.get("post_limit", 12)), "cleanup_days": douyin.get("cleanup_days", 0)},
-            "wechat": {"targets": ["moments"], "username": "", "has_password": False, "has_cookie": False, "login_method": "desktop", "enabled": wechat.get("enabled", False), "interval": wechat.get("interval", config.get("interval", 300)), "post_limit": wechat.get("post_limit", config.get("post_limit", 12)), "cleanup_days": wechat.get("cleanup_days", 0)},
+            "wechat": {"targets": wechat.get("targets", []), "username": "", "has_password": False, "has_cookie": False, "login_method": "desktop", "enabled": wechat.get("enabled", False), "interval": wechat.get("interval", config.get("interval", 300)), "post_limit": wechat.get("post_limit", config.get("post_limit", 12)), "cleanup_days": wechat.get("cleanup_days", 0)},
         },
         "status": status,
         "login_screenshot": changing_file_url(DATA_DIR / "login-required.png"),
@@ -182,6 +183,7 @@ def state(library_data: bool = True):
         "douyin_login_screenshot": changing_file_url(DATA_DIR / "douyin" / "login-required.png"),
         "douyin_qr_state": read_json(DATA_DIR / "douyin" / "qr-state.json", {}).get("state"),
         "douyin_sms_state": read_json(DATA_DIR / "douyin" / "sms-state.json", {}).get("state"),
+        "wechat_authors": read_json(DATA_DIR / "wechat" / "authors.json", []),
         "library": library() if library_data else None,
     }
 
@@ -202,7 +204,7 @@ async def save_config(request: Request):
     if not isinstance(enabled, bool):
         raise HTTPException(400, "平台开关必须为布尔值")
     try:
-        targets = target_list(["moments"] if platform == "wechat" else payload.get("targets", []), platform)
+        targets = target_list(payload.get("targets", []), platform)
         interval = max(60, min(86_400, int(payload.get("interval", saved.get("interval", existing.get("interval", 300))))))
         cleanup_days = max(0, min(3650, int(payload.get("cleanup_days", saved.get("cleanup_days", 0)))))
         post_limit = max(1, min(24, int(payload.get("post_limit", saved.get("post_limit", existing.get("post_limit", 12))))))
@@ -243,6 +245,10 @@ async def save_config(request: Request):
     if platform == "instagram":
         config["post_limit"] = post_limit
     write_json(CONFIG_PATH, config)
+    if platform == "wechat":
+        host_config = DATA_DIR / "wechat" / "collector-config.json"
+        write_json(host_config, {key: selected[key] for key in ("targets", "enabled", "interval", "post_limit", "cleanup_days")})
+        host_config.chmod(0o644)
     root = platform_dir(DATA_DIR, platform)
     root.mkdir(parents=True, exist_ok=True)
     (root / "login-paused.json").unlink(missing_ok=True)

@@ -77,9 +77,9 @@ docker compose logs -f
 
 ## 微信朋友圈
 
-微信朋友圈复用测试机上已登录的官方 Linux 微信。当前第一版会采集已手动打开的独立朋友圈窗口，滚动多页、按图片哈希去重，并仅将裁剪后的朋友圈窗口图片导入 `data/wechat/`。它不会读取聊天数据库、评论、点赞或联系人。微信平台默认关闭；启用后请保持独立朋友圈窗口打开。
+微信朋友圈读取测试机上官方 Linux 微信的数据目录。一次性 SNS 专用密钥登记只验证本地 `sns.db`；之后采集器仅导入面板中明确选择的好友 wxid，以及对应文字、原图和视频。聊天、联系人、评论、点赞、位置、原始 XML、CDN Token 和数据库密钥都不会进入 IG Luv 数据目录。
 
-主机需要官方 Linux 微信、正在运行的 X11 桌面、`xdotool`、`xprop`、ImageMagick 的 `import` 和 Python 3。根据主机路径调整 `DISPLAY` 与 `XAUTHORITY` 后，将 `deploy/ig-luv-wechat.service` 安装为 systemd 服务。该服务在 Docker 外运行，只向 `data/wechat/` 写入标准化快照。
+主机需要官方 Linux 微信、Python 3、`python3-pycryptodome`、`python3-zstandard`、Node.js、经过审查的外部 SNS 导出/媒体工具，以及保存在 IG Luv 目录之外的 SNS 密钥。设置 `WECHAT_ACCOUNT_DIR` 后安装 `deploy/ig-luv-wechat.service`，服务以微信用户身份运行；随附 unit 会用 `ExecStartPre` 创建可写的 `data/wechat`。微信平台默认关闭，关闭状态下只发现好友候选，不导入帖子；必须从候选列表选择稳定 wxid 后启用。
 
 结构化朋友圈文字和原始图片/视频需要单独完成 `sns.db` 密钥登记，当前截图版暂不包含。
 

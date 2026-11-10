@@ -13,6 +13,7 @@ import tiktok
 import threads
 import x as x_platform
 import douyin
+import wechat_structured_host
 import web
 from platforms import cleanup_platform_media, parse_cookie, read_json, target_list, write_json
 
@@ -52,7 +53,7 @@ class PlatformTests(unittest.TestCase):
         return self.client.post("/api/config", json={"platform": "douyin", "targets": ["https://www.douyin.com/user/MS4wLjAB_Test-ID"], "username": "", "password": "", **options})
 
     def save_wechat(self, **options):
-        return self.client.post("/api/config", json={"platform": "wechat", "targets": [], "username": "", "password": "", "enabled": True, **options})
+        return self.client.post("/api/config", json={"platform": "wechat", "targets": ["wxid_demo"], "username": "", "password": "", "enabled": True, **options})
 
     def test_config_preserves_instagram_and_hides_both_secrets(self):
         self.assertEqual(self.save_tiktok(interval=60, post_limit=6, cleanup_days=7).status_code, 200)
@@ -76,7 +77,7 @@ class PlatformTests(unittest.TestCase):
         self.assertNotIn("th-secret", str(response))
         self.assertNotIn("x-secret", str(response))
         self.assertEqual(response["config"]["douyin"]["targets"], ["MS4wLjAB_Test-ID"])
-        self.assertEqual(response["config"]["wechat"]["targets"], ["moments"])
+        self.assertEqual(response["config"]["wechat"]["targets"], ["wxid_demo"])
         self.assertEqual(response["config"]["tiktok"]["post_limit"], 6)
         self.client.post("/api/config", json={**self.ig, "password": ""})
         self.assertEqual(read_json(self.root / "config.json", {})["tiktok"]["password"], "tk-secret")
@@ -137,8 +138,15 @@ class PlatformTests(unittest.TestCase):
         self.assertEqual(self.save_tiktok(username="name", password="").status_code, 400)
         self.assertEqual(target_list("@Demo, DEMO, other.name"), ["demo", "other.name"])
         self.assertEqual(target_list("https://www.douyin.com/user/MS4wLjAB_Test-ID?from=web", "douyin"), ["MS4wLjAB_Test-ID"])
+        self.assertEqual(target_list("wxid_demo, wxid_other", "wechat"), ["wxid_demo", "wxid_other"])
         with self.assertRaises(ValueError):
             parse_cookie("sessionid=test\nvalue")
+        with self.assertRaises(ValueError):
+            target_list("bad/name", "wechat")
+        with self.assertRaises(ValueError):
+            target_list("好友昵称", "wechat")
+        with self.assertRaises(ValueError):
+            target_list("..", "wechat")
         self.assertEqual(self.save_x(targets=["not.valid"]).status_code, 400)
         self.assertEqual(self.save_x(username="mail@example.com", password="secret").status_code, 400)
         self.assertEqual(self.save_douyin(targets=["https://evil.example/user/test"]).status_code, 400)
@@ -225,7 +233,7 @@ class PlatformTests(unittest.TestCase):
         wechat_item = self.root / "wechat/targets/moments/items/page1"
         wechat_item.mkdir(parents=True)
         (wechat_item / "media-01.png").write_bytes(b"capture")
-        write_json(wechat_item / "metadata.json", {"captured_at": "2026-11-08T00:00:00Z"})
+        write_json(wechat_item / "metadata.json", {"captured_at": "2026-11-08T00:00:00Z", "capture_mode": "viewport", "media": ["media-01.png"]})
         result = self.client.delete("/api/cleanup?platform=wechat").json()
         self.assertEqual(result["screenshots"], 1)
         self.assertFalse(wechat_item.exists())
@@ -556,6 +564,17 @@ class PlatformTests(unittest.TestCase):
         self.assertEqual(attempts, [old_id, current_id])
         self.assertEqual(result["failed_items"][0]["id"], old_id)
         self.assertEqual(read_json(root / "pending.json", {})[target], {old_id: old_url})
+
+    def test_wechat_friend_selection_uses_stable_id_and_limit(self):
+        export = {"posts": [
+            {"username": "wxid_a", "nickname": "同名", "id": "3", "create_time": 3},
+            {"username": "wxid_a", "nickname": "同名", "id": "2", "create_time": 2},
+            {"username": "wxid_b", "nickname": "同名", "id": "1", "create_time": 1},
+        ]}
+        with patch.object(wechat_structured_host, "DATA_DIR", self.root):
+            selected, authors = wechat_structured_host.selected_posts(export, ["wxid_a"], 1)
+        self.assertEqual([post["id"] for post in selected], ["3"])
+        self.assertEqual(set(authors), {"wxid_a", "wxid_b"})
 
 
 if __name__ == "__main__":

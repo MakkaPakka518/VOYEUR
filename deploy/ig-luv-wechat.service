@@ -4,9 +4,11 @@ After=network.target
 
 [Service]
 Type=simple
+User=wechat
+Group=wechat
 Environment=DATA_DIR=/opt/ig-luv/data
-Environment=DISPLAY=:2
-Environment=XAUTHORITY=/mnt/data/wechat-home/.Xauthority
+Environment=WECHAT_ACCOUNT_DIR=/mnt/data/wechat-home/xwechat_files/REPLACE_ME/db_storage
+ExecStartPre=+/usr/bin/install -d -o wechat -g wechat -m 700 /opt/ig-luv/data/wechat
 ExecStart=/usr/bin/python3 /opt/ig-luv/wechat_moments_host.py
 Restart=on-failure
 RestartSec=10

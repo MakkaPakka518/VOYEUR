@@ -14,6 +14,8 @@ DOUYIN_TARGET_RE = re.compile(r"^[A-Za-z0-9_-]{1,160}$")
 def valid_target(value, platform="instagram"):
     if platform == "douyin":
         return isinstance(value, str) and bool(DOUYIN_TARGET_RE.fullmatch(value))
+    if platform == "wechat":
+        return isinstance(value, str) and value not in {".", ".."} and bool(re.fullmatch(r"[A-Za-z0-9_.-]{1,80}", value))
     return isinstance(value, str) and bool(USERNAME_RE.fullmatch(value)) and value not in {".", ".."}
 
 
@@ -36,6 +38,8 @@ def target_list(value, platform="instagram"):
                 item = match.group(1)
             if item not in targets:
                 targets.append(item)
+    elif platform == "wechat":
+        targets = list(dict.fromkeys(item.strip() for item in value if item.strip()))
     else:
         targets = list(dict.fromkeys(item.strip().lstrip("@").lower() for item in value if item.strip()))
     if any(not valid_target(item, platform) for item in targets):
@@ -87,10 +91,23 @@ def cleanup_platform_media(data_dir, platform, older_than_days=None):
             continue
         for item in (path for path in items.iterdir() if path.is_dir()):
             if platform == "wechat":
-                screenshots = list(item.glob("*.png"))
+                metadata_path = item / "metadata.json"
+                metadata = read_json(metadata_path, {})
+                screenshots = list(item.glob("*.png")) if metadata.get("capture_mode") == "viewport" else []
                 if screenshots and (cutoff is None or min(path.stat().st_mtime for path in screenshots) < cutoff):
                     removed["screenshots"] += len(screenshots)
                     shutil.rmtree(item)
+                elif metadata:
+                    media = list(metadata.get("media", []))
+                    for filename in list(media):
+                        path = item / filename
+                        if path.suffix.lower() == ".mp4" and path.exists() and (cutoff is None or path.stat().st_mtime < cutoff):
+                            path.unlink()
+                            media.remove(filename)
+                            removed["videos"] += 1
+                    if media != metadata.get("media", []):
+                        metadata["media"] = media
+                        write_json(metadata_path, metadata)
                 continue
             remove(item / "page.png", "screenshots")
             for video in item.glob("*.mp4"):
